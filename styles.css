@@ -1,0 +1,17 @@
+/* Материалы из присланного дизайна. Геометрия находится в models.js.
+   Стили страницы просмотра не подключаем: они меняют раскладку самой игры. */
+:root {
+  --skin:#bf947e; --skin-shadow:#80564b; --skin-blush:#bb7566;
+  --stubble:#655950; --skin-roughness:0.63; --lips:#a7756c;
+  --mouth-line:#704b43; --nail:#c8a897; --hair:#30261f;
+  --hair-highlight:#80634a; --brow:#24180f; --iris:#4a6b3a; --sclera:#f2ede6;
+  --shirt:#596453; --shirt-seam:#4b5546; --jeans:#304059;
+  --denim-stitch:#786f5c; --belt:#302821; --shoe:#1d1d1f; --shoe-sole:#e8e4dc;
+  --spider-body:#1b1512; --spider-abdomen:#241a14; --spider-hair:#6b4a30;
+  --spider-band:#c8642a; --spider-band-light:#e3a26a;
+  --spider-fang:#0a0807; --spider-eye:#050505; --spider-roughness:0.6;
+  --floor:#8d877d; --sky-top:#cfd6dc; --sky-bottom:#f1ede6;
+  --ui-bg:#111315; --ui-panel:#1a1d20; --ui-text:#e9e6e1;
+  --ui-muted:#9aa0a6; --ui-accent:#c8642a;
+}
+#camera-mode {position:absolute;right:28px;top:112px;background:var(--ui-panel);color:var(--ui-text);border:1px solid var(--ui-accent);border-radius:6px;padding:8px 12px;font-size:11px;z-index:4}
