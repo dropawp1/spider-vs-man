@@ -64,7 +64,7 @@
     $('panel-title').textContent = title; $('panel-text').textContent = text;
     $('start').textContent = button; $('start').hidden = false;
     $('mode-picker').hidden = true; $('back-menu').hidden = false;
-    $('overlay').querySelector('.panel').classList.remove('menu');
+    $('overlay').querySelector('.panel').classList.remove('menu','finale');
     $('instructions').hidden = true; $('overlay').hidden = false;
   }
   function releaseMouse() { if (document.pointerLockElement) document.exitPointerLock(); }
@@ -85,8 +85,9 @@
     game = R.createGame(); accumulator = 0;
     scene.background.setHex(NIGHT); scene.fog.color.setHex(NIGHT);
     $('pause').disabled = true;
-    $('panel-title').textContent = 'НОЧНОЙ ГОРОД';
-    $('panel-text').textContent = `Выбери свой путь: свободные полёты над городом или побег из «Арахны». Общая карта — ${Math.round(R.WORLD)} × ${Math.round(R.WORLD)} м, ${R.buildings.length} зданий. Управление: WASD, ПКМ — паутина, Пробел — прыжок, F5 — камера.`;
+    $('panel-title').textContent = 'Ночь Охоты';
+    $('panel-text').textContent = 'Десять минут до рассвета. Целый город над тобой. За спиной — «Арахна», впереди — свобода. Но в лаборатории остались те, кто всё ещё ждёт тебя.';
+    $('overlay').querySelector('.panel').classList.remove('finale');
     $('overlay').querySelector('.panel').classList.add('menu');
     $('mode-picker').hidden = false; $('instructions').hidden = true;
     $('start').hidden = true; $('back-menu').hidden = true; $('overlay').hidden = false;
@@ -179,7 +180,7 @@
     const blackKey=dark>0?bo.id+':'+dark.toFixed(2):'';
     if(blackKey!==lastBlack){city.blackout(dark>0?bo:null,dark);lastBlack=blackKey;}
     const goal=game.mode==='story'&&running?S.objective(game):null;
-    beacon.visible=!!goal&&goal.kind==='drive'&&!ending&&game.state!=='won';
+    beacon.visible=!!goal&&(goal.kind==='drive'||goal.kind==='rescue')&&!ending&&game.state!=='won';
     if(beacon.visible){beacon.position.set(goal.x,goal.y,goal.z);beaconCore.rotation.y=now/400;beaconCore.position.y=Math.sin(now/300)*.15;}
     if(now-lastHud>=50 || !active){
     lastHud=now;
@@ -212,14 +213,14 @@
       const rel=Math.atan2(-(goal.x-p.x),-(goal.z-p.z))-yaw, arrows=['↑','↖','←','↙','↓','↘','→','↗'];
       const dir=arrows[((Math.round(rel/(Math.PI/4))%8)+8)%8], m=Math.round(Math.hypot(goal.x-p.x,goal.y-p.y,goal.z-p.z));
       $('objective-label').textContent=goal.label;
-      $('objective-meta').textContent=`${dir} ${m} м · ${goal.left} с`+(goal.progress?` · антидот ${Math.round(goal.progress*100)}%`:'');
+      $('objective-meta').textContent=`${dir} ${m} м · ${goal.left} с`+(goal.progress?` · ${goal.kind==='rescue'?'замки':'антидот'} ${Math.round(goal.progress*100)}%`:'');
     }
     $('damage').style.opacity = game.invulnerable>1.1 ? .7 : 0;
     $('crosshair').classList.toggle('ready', !!(R.hunterAim(game,aimDirection())||R.aim(game, aimDirection())));
     $('crosshair').classList.toggle('attached', !!game.web);
     $('crosshair').classList.toggle('sling', !!sl);
     const charge=sl?Math.round(Math.min(1,sl.charge/R.SLING_CHARGE)*100):0;
-    $('hint').textContent = now<slingMissUntil ? 'Наведи точно на другую стену: рогатке нужны два разных здания.' : now<missUntil ? `Нет здания под прицелом в пределах ${R.RANGE} м.` : sl ? !sl.b ? 'Первая нить закреплена · наведи на другое здание и нажми ЛКМ / Q' : `Рогатка: натяжение ${charge}% · смотри в сторону полёта · ЛКМ / Q или Пробел — выстрел` : goal&&goal.kind==='help'&&distance<3.6 ? 'Держи E — ввести антидот Шестому' : game.web ? 'Держи ПКМ — авто-качели · WASD — рули дугой · отпусти ПКМ или Пробел — подброс и полёт' : lockHint ? 'Нажми на сцену для обзора мышью; запасной обзор — зажми ЛКМ и двигай мышь' : p.climbing ? 'На стене · W / S — вверх / вниз · Пробел — оттолкнуться' : game.elapsed<(h.webUntil||0) ? `Охотник опутан: ещё ${Math.ceil(h.webUntil-game.elapsed)} с · ПКМ — паутина` : 'ПКМ — зацеп / замедлить Охотника на 5 с · ЛКМ дважды по стенам — рогатка';
+    $('hint').textContent = now<slingMissUntil ? 'Наведи точно на другую стену: рогатке нужны два разных здания.' : now<missUntil ? `Нет здания под прицелом в пределах ${R.RANGE} м.` : sl ? !sl.b ? 'Первая нить закреплена · наведи на другое здание и нажми ЛКМ / Q' : `Рогатка: натяжение ${charge}% · смотри в сторону полёта · ЛКМ / Q или Пробел — выстрел` : goal&&goal.kind==='rescue' ? 'Вернись к маяку лаборатории · удерживай E у терминала 5 с · до рассвета' : goal&&goal.kind==='help'&&distance<3.6 ? 'Держи E — ввести антидот Шестому' : game.web ? 'Держи ПКМ — авто-качели · WASD — рули дугой · отпусти ПКМ или Пробел — подброс и полёт' : lockHint ? 'Нажми на сцену для обзора мышью; запасной обзор — зажми ЛКМ и двигай мышь' : p.climbing ? 'На стене · W / S — вверх / вниз · Пробел — оттолкнуться' : game.elapsed<(h.webUntil||0) ? `Охотник опутан: ещё ${Math.ceil(h.webUntil-game.elapsed)} с · ПКМ — паутина` : 'ПКМ — зацеп / замедлить Охотника на 5 с · ЛКМ дважды по стенам — рогатка';
     }
     if (ending) {
       const t=Math.min(1,(now-ending)/6000), allies=endingId==='truth'||endingId==='allies';
@@ -252,7 +253,12 @@
         if (game.state !== 'playing') {
           running = false; clearInput(); releaseMouse(); $('pause').disabled = true;
           if(game.state==='won'){
-            endingId=S.ending(game);ending=now;scene.background.setHex(0x101d24);scene.fog.color.setHex(0x101d24);
+            endingId=S.ending(game);
+            if(endingId==='cells'){
+              const st=S.state(game);
+              panel('Открытые клетки',`${S.ENDINGS.cells.text} ${st.helped?'Шестой вывел последнюю группу и ушёл вместе с вами.':'Судьба Шестого осталась неизвестной.'} Улики: ${st.drives} из 2.`, 'Начать новую ночь');
+              $('overlay').querySelector('.panel').classList.add('finale');
+            }else{ending=now;scene.background.setHex(0x101d24);scene.fog.color.setHex(0x101d24);}
           }else panel('СИГНАЛ ОБЪЕКТА №7 ПОТЕРЯН',`Электробита лишила тебя сознания. Охотник вернул Объект №7 в «Арахну». До поимки: ${Math.floor(game.elapsed/60)} мин ${Math.floor(game.elapsed%60)} сек. Попробуй снова — Левин ещё на связи.`,'Повторить побег');
           break;
         }

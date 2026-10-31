@@ -1,0 +1,24 @@
+/* Site presentation only. Character materials and the WebGL world are unchanged. */
+.overlay{background:#0d1715f5;backdrop-filter:blur(14px);padding:48px 24px;align-items:safe center}
+.overlay:has(.menu),.overlay:has(.finale){background:radial-gradient(ellipse at 85% 10%,#284b3f80,transparent 55%),radial-gradient(ellipse at 0 95%,#6c57362b,transparent 50%),#101916;backdrop-filter:none}
+.panel{position:relative;width:620px;padding:44px;background:#18251ff5;border:1px solid #bcd0b323;border-radius:22px;box-shadow:0 32px 90px #0003;color:#eef0e5}
+.panel.menu{width:980px;padding:64px;background:transparent;border:0;box-shadow:none}
+.eyebrow{display:flex;align-items:center;gap:10px;font:600 10px/1.6 'Segoe UI',sans-serif;letter-spacing:2.8px;color:#bdd4a9}
+.edition-dot{width:6px;height:6px;border-radius:50%;background:#cbe4b6;box-shadow:0 0 14px #cbe4b655}
+.menu-edition{display:none}.menu .menu-edition{display:flex;position:absolute;top:64px;right:64px;gap:16px;align-items:center;font-size:10px;letter-spacing:2px;color:#bfc5b5}.menu-edition span{color:#7e9485;font-size:9px;border-left:1px solid #68806a66;padding-left:16px}
+h1{font-family:Georgia,'Times New Roman',serif;font-weight:400;font-size:clamp(36px,5vw,60px);letter-spacing:-1.8px;line-height:1.08;margin:28px 0 22px;text-wrap:balance}
+.menu h1{font-size:clamp(56px,8vw,100px);letter-spacing:-4px;margin:42px 0 24px;max-width:650px}
+.panel>p{font-size:15px;line-height:1.85;color:#aebcad;max-width:620px}
+.menu #panel-text{font-size:17px;max-width:560px;margin-bottom:38px}
+.mode-picker{grid-template-columns:1fr 1fr;gap:18px;margin:36px 0 28px}
+.mode-card{position:relative;min-height:168px;padding:26px;border:1px solid #bad3ad30;border-radius:14px;background:#d5e7bf07;transition:transform .2s,background .2s,border-color .2s;color:#e9eddf}
+.mode-card strong{font-size:20px;font-weight:500;letter-spacing:-.3px}.mode-card strong span{color:#bfd6a5;font-size:22px}.mode-card small{margin-top:18px;font-size:13px;line-height:1.7;color:#a5b7a7;max-width:310px}
+.mode-card:hover{transform:translateY(-3px);background:#d5e7bf10;border-color:#bad3ad80}
+#choose-story{background:#c6dbab;color:#1d3228;border-color:#c6dbab;order:-1}#choose-story small{color:#3b5542}#choose-story strong span{color:#304b3a}#choose-story:hover{background:#d5e8be}
+.primary{background:#c6dbab;color:#1d3228;padding:17px 22px;border-radius:10px;margin-top:28px;justify-content:center}.primary:hover{background:#d5e8be}.secondary{border-color:#b8c7ab30;color:#bac8b5;border-radius:10px;padding:15px}.panel .note{border-top:1px solid #bdcdb420;padding-top:22px;font-size:10px;letter-spacing:.6px;line-height:1.8;color:#819884}
+.finale{border-top:3px solid #c6dbab}.finale:before{content:'НА РАССВЕТЕ ВСЁ ИЗМЕНИЛОСЬ';display:block;color:#c6dbab;font-size:9px;letter-spacing:2.5px;margin-bottom:28px}.finale .eyebrow{display:none}
+#game:has(#overlay:not([hidden]))>.hud{opacity:.35}
+.overlay:not([hidden])~*{pointer-events:none}
+@media(max-width:760px){.overlay{padding:28px 18px}.panel,.panel.menu{padding:28px 22px}.menu .menu-edition{position:static;margin-top:24px;font-size:9px}.menu h1{font-size:60px;letter-spacing:-2.5px;margin-top:30px}.menu #panel-text{font-size:15px}.mode-picker{grid-template-columns:1fr;gap:12px;margin:26px 0}.mode-card{min-height:0;padding:22px}.mode-card small{max-width:none;margin-top:10px}.panel>p{font-size:14px}}
+@media(max-height:720px) and (min-width:761px){.overlay{padding:24px}.panel.menu{padding:30px 48px}.menu .menu-edition{top:30px;right:48px}.menu h1{font-size:72px;margin:24px 0 16px}.menu #panel-text{font-size:15px;margin-bottom:20px}.mode-picker{margin:24px 0 16px}.mode-card{min-height:140px;padding:22px}.panel .note{padding-top:16px}}
+@media(prefers-reduced-motion:reduce){.mode-card{transition:none}.mode-card:hover{transform:none}}

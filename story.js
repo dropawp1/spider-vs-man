@@ -21,7 +21,9 @@
   ];
   const DRIVES=[{at:180,ttl:100,name:'ФЛЕШКА: ПРОТОКОЛЫ'},{at:360,ttl:100,name:'ФЛЕШКА: ЖУРНАЛ СЕРВЕРОВ'}];
   const CHOICE_AT=420,CHOICE_TTL=45,HELP_TIME=1.5,HELP_RANGE=3.6,PICKUP=2.6;
+  const RESCUE_AT=480,RESCUE_TIME=5,RESCUE_RANGE=3;
   const ENDINGS={
+    cells:{title:'ФИНАЛ: ОТКРЫТЫЕ КЛЕТКИ',text:'Ты вернулся туда, откуда бежал. Один за другим замки лаборатории погасли: клетки открыты. Левин отключил охрану, а ты вывел подопытных через служебный ход. На рассвете город увидел их силуэты на крышах. «Арахна» потеряла своих пленников — и право называть их объектами. Это уже не побег одного. Это начало свободы для всех.'},
     truth:{title:'ФИНАЛ: ПРАВДА',text:'Обе флешки у Левина, Шестой свободен. К утру протоколы «Арахны» во всех новостях, лабораторию опечатывают. Два бывших эксперимента уходят по тоннелю вместе — больше за ними никто не придёт.'},
     expose:{title:'ФИНАЛ: РАЗОБЛАЧЕНИЕ',text:'Ты унёс обе флешки, и Левин выложил их в сеть. «Арахне» конец. Но Шестой остался наверху на новой дозе — его судьбу решит уже суд, а не корпорация.'},
     allies:{title:'ФИНАЛ: ДВА БЕГЛЕЦА',text:'Улик не хватило, «Арахна» уцелела. Зато за шлюзом вас двое: Седьмой и Шестой. Охота не закончилась — теперь охотятся на обоих.'},
@@ -40,6 +42,8 @@
   function radioAt(elapsed,story){
     const live=story&&story.radio;
     if(live&&elapsed>=live.at&&elapsed<live.at+live.duration)return live;
+    if(story&&story.freed&&elapsed>=600)return {from:LEVIN,text:'Все вышли. Служебный ход свободен. Седьмой, ты открыл не только свою клетку.'};
+    if(story&&story.rescue&&elapsed>=480&&elapsed<498)return {from:LEVIN,text:'Маяк ведёт к аварийному терминалу лаборатории. Держи E пять секунд рядом с ним, чтобы освободить подопытных. Или продолжай побег — выбор за тобой.'};
     const m=messages.find(m=>elapsed>=m.at&&elapsed<m.at+m.duration);
     if(!m)return null;
     return story&&story.helped&&m.alt?{...m,text:m.alt}:m;
@@ -76,15 +80,29 @@
         say(g,ARACHNA,'«Дрон доставил дозу. Объект №6 снова в строю». Он идёт за тобой — быстрее, чем раньше.',10);
       }
     }
+    if(t>=RESCUE_AT&&!s.fired.rescue){
+      s.fired.rescue=true;
+      s.rescue={...pickRoof(g,7),hold:0};
+      say(g,'НЕИЗВЕСТНЫЙ СИГНАЛ','Седьмой… мы ещё в клетках. На крыше лаборатории есть аварийный терминал. Маяк включён. Вернёшься — держи E пять секунд, и замки откроются. До рассвета две минуты.',18);
+    }
+    if(s.rescue&&!s.freed){
+      const r=s.rescue,near=Math.hypot(p.x-r.x,p.y-r.y,p.z-r.z)<RESCUE_RANGE;
+      r.hold=near&&input.interact?r.hold+dt:0;
+      if(r.hold>=RESCUE_TIME){
+        s.freed=true;
+        say(g,LEVIN,s.helped?'Замки открыты! Шестой прикроет служебный ход. Выводи остальных, я отключаю охрану. Сегодня никто не останется в клетке.':'Замки открыты! Я отключаю охрану и веду подопытных к служебному ходу. Держись до рассвета — вы уйдёте вместе.',18);
+      }
+    }
   }
-  function ending(g){const s=state(g);return s.drives>=2&&s.helped?'truth':s.drives>=2?'expose':s.helped?'allies':'escape';}
+  function ending(g){const s=state(g);return s.freed?'cells':s.drives>=2&&s.helped?'truth':s.drives>=2?'expose':s.helped?'allies':'escape';}
   // HUD: текущая цель сюжета, null если цели нет.
   function objective(g){
     const s=state(g),t=g.elapsed;
+    if(s.rescue&&!s.freed)return {kind:'rescue',label:'ОТКРЫТЫЕ КЛЕТКИ · ДЕРЖИ E У ТЕРМИНАЛА',x:s.rescue.x,y:s.rescue.y,z:s.rescue.z,left:Math.max(0,Math.ceil(R.DURATION-t)),progress:Math.min(1,s.rescue.hold/RESCUE_TIME)};
     if(s.objective&&s.objective.type==='drive')return {kind:'drive',label:s.objective.name,x:s.objective.x,y:s.objective.y,z:s.objective.z,left:Math.max(0,Math.ceil(s.objective.until-t))};
     if(s.choice&&!s.decided)return {kind:'help',label:'ПОМОЧЬ ШЕСТОМУ — ПОДОЙДИ И ДЕРЖИ E',x:g.hunter.x,y:g.hunter.y,z:g.hunter.z,left:Math.max(0,Math.ceil(s.choice.until-t)),progress:Math.min(1,s.help/HELP_TIME)};
     return null;
   }
-  const api={title,intro,messages,DRIVES,ENDINGS,CHOICE_AT,CHOICE_TTL,HELP_TIME,radioAt,update,ending,objective,pickRoof,state};
+  const api={title,intro,messages,DRIVES,ENDINGS,CHOICE_AT,CHOICE_TTL,HELP_TIME,RESCUE_AT,RESCUE_TIME,RESCUE_RANGE,radioAt,update,ending,objective,pickRoof,state};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.SpiderStory=api;
 })(typeof window!=='undefined'?window:globalThis);
