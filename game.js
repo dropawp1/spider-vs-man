@@ -58,7 +58,10 @@
   let last = 0, accumulator = 0, jump = false, missUntil = 0, lockHint = false;
   const keys = new Set();
   function clearInput() { keys.clear(); jump = false; game.web = null; game.sling = null; }
-  function trySling() { if (!R.startSling(game, aimDirection())) slingMissUntil = performance.now() + 1400; }
+  function trySling() {
+    if (!R.startSling(game, aimDirection())) slingMissUntil = performance.now() + 1400;
+    yaw = R.slingYaw(game,yaw);
+  }
   let slingMissUntil = 0;
   function panel(title, text, button) {
     $('panel-title').textContent = title; $('panel-text').textContent = text;
@@ -122,10 +125,11 @@
     if (!running || paused) return;
     if (document.pointerLockElement === $('viewport') || (e.target === $('viewport') && e.buttons === 1)) {
       const look = C.look(yaw,pitch,e.movementX,e.movementY);
-      yaw = look.yaw; pitch = look.pitch;
+      yaw = R.slingYaw(game,look.yaw); pitch = look.pitch;
     }
   });
   function aimDirection() {
+    yaw = R.slingYaw(game,yaw);
     const d=C.direction(yaw,pitch);
     if(!thirdPerson)return d;
     const view=C.pose(game.player,yaw,pitch,true,R.solids),h=game.hunter;
@@ -148,6 +152,7 @@
   let lastHud=-Infinity;
   function render(now) {
     const p = game.player, h = game.hunter, active = running && !paused;
+    yaw = R.slingYaw(game,yaw);
     const view=C.pose(p,yaw,pitch,thirdPerson,R.solids);
     camera.position.set(view.x,view.y,view.z); camera.rotation.set(pitch,yaw,0);
     spider.root.visible=thirdPerson && !ending && game.state!=='won';
@@ -220,7 +225,7 @@
     $('crosshair').classList.toggle('attached', !!game.web);
     $('crosshair').classList.toggle('sling', !!sl);
     const charge=sl?Math.round(Math.min(1,sl.charge/R.SLING_CHARGE)*100):0;
-    $('hint').textContent = now<slingMissUntil ? 'Наведи точно на другую стену: рогатке нужны два разных здания.' : now<missUntil ? `Нет здания под прицелом в пределах ${R.RANGE} м.` : sl ? !sl.b ? 'Первая нить закреплена · наведи на другое здание и нажми ЛКМ / Q' : `Рогатка: натяжение ${charge}% · смотри в сторону полёта · ЛКМ / Q или Пробел — выстрел` : goal&&goal.kind==='rescue' ? 'Вернись к маяку лаборатории · удерживай E у терминала 5 с · до рассвета' : goal&&goal.kind==='help'&&distance<3.6 ? 'Держи E — ввести антидот Шестому' : game.web ? 'Держи ПКМ — авто-качели · WASD — рули дугой · отпусти ПКМ или Пробел — подброс и полёт' : lockHint ? 'Нажми на сцену для обзора мышью; запасной обзор — зажми ЛКМ и двигай мышь' : p.climbing ? 'На стене · W / S — вверх / вниз · Пробел — оттолкнуться' : game.elapsed<(h.webUntil||0) ? `Охотник опутан: ещё ${Math.ceil(h.webUntil-game.elapsed)} с · ПКМ — паутина` : 'ПКМ — зацеп / замедлить Охотника на 5 с · ЛКМ дважды по стенам — рогатка';
+    $('hint').textContent = now<slingMissUntil ? 'Наведи точно на другую стену: рогатке нужны два разных здания.' : now<missUntil ? `Нет здания под прицелом в пределах ${R.RANGE} м.` : sl ? !sl.b ? 'Первая нить закреплена · наведи на другое здание и нажми ЛКМ / Q' : `Рогатка: натяжение ${charge}% · прицел ±45° от центра нитей · ЛКМ / Q или Пробел — выстрел` : goal&&goal.kind==='rescue' ? 'Вернись к маяку лаборатории · удерживай E у терминала 5 с · до рассвета' : goal&&goal.kind==='help'&&distance<3.6 ? 'Держи E — ввести антидот Шестому' : game.web ? 'Держи ПКМ — авто-качели · WASD — рули дугой · отпусти ПКМ или Пробел — подброс и полёт' : lockHint ? 'Нажми на сцену для обзора мышью; запасной обзор — зажми ЛКМ и двигай мышь' : p.climbing ? 'На стене · W / S — вверх / вниз · Пробел — оттолкнуться' : game.elapsed<(h.webUntil||0) ? `Охотник опутан: ещё ${Math.ceil(h.webUntil-game.elapsed)} с · ПКМ — паутина` : 'ПКМ — зацеп / замедлить Охотника на 5 с · ЛКМ дважды по стенам — рогатка';
     }
     if (ending) {
       const t=Math.min(1,(now-ending)/6000), allies=endingId==='truth'||endingId==='allies';

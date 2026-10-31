@@ -197,10 +197,23 @@
     Object.assign(g.sling,{b:hit,dx:mx/n,dy:my/n,dz:mz/n,ox:p.x,oy:p.y,oz:p.z});
     p.climbing=false;p.grounded=false;p.fly=true;return true;
   }
+  // Horizontal sector follows the midpoint of the two anchors, not the last mouse position.
+  // At the exact midpoint there is no horizontal bearing; keep the original pull direction.
+  function slingYaw(g,yaw){
+    const s=g.sling;if(!s||!s.b)return yaw;
+    let x=(s.a.x+s.b.x)/2-g.player.x,z=(s.a.z+s.b.z)/2-g.player.z;
+    if(Math.hypot(x,z)<1e-6){x=s.dx;z=s.dz;}
+    if(Math.hypot(x,z)<1e-6)return yaw;
+    const center=Math.atan2(-x,-z),delta=Math.atan2(Math.sin(yaw-center),Math.cos(yaw-center));
+    return yaw+clamp(delta,-Math.PI/4,Math.PI/4)-delta;
+  }
   function releaseSling(g,d){
     const s=g.sling;if(!s||!s.b)return false;
     const n=d&&Math.hypot(d.x,d.y,d.z);
-    if(n){s.dx=d.x/n;s.dy=d.y/n;s.dz=d.z/n;}
+    if(n){
+      const horizontal=Math.hypot(d.x,d.z)/n,yaw=slingYaw(g,Math.atan2(-d.x,-d.z));
+      s.dx=-Math.sin(yaw)*horizontal;s.dy=d.y/n;s.dz=-Math.cos(yaw)*horizontal;
+    }
     const p=g.player,k=Math.min(1,s.charge/SLING_CHARGE),speed=SLING_MIN+(SLING_MAX-SLING_MIN)*k;
     p.vx=s.dx*speed;p.vy=s.dy*speed+4;p.vz=s.dz*speed;p.fly=true;p.grounded=false;
     p.slingFlight=true;
@@ -345,6 +358,6 @@
     if(slowed&&!h.climbing&&h.vy>0)h.vy=Math.min(h.vy,4);
     move(h,dt);
   }
-  const api={GRID,BLOCK,WORLD,DURATION,RANGE,MAX_SPEED,BLACKOUT,SLING_CHARGE,SLING_MIN,SLING_MAX,solids,assistAim,hunterAim,releaseWeb,startSling,releaseSling,cancelSling,cutPanel,blind,hostile,query,rayCandidates,webBlocked,buildings,createGame,wall,move,aim,shootWeb,rayBox,step};
+  const api={GRID,BLOCK,WORLD,DURATION,RANGE,MAX_SPEED,BLACKOUT,SLING_CHARGE,SLING_MIN,SLING_MAX,solids,assistAim,hunterAim,releaseWeb,startSling,slingYaw,releaseSling,cancelSling,cutPanel,blind,hostile,query,rayCandidates,webBlocked,buildings,createGame,wall,move,aim,shootWeb,rayBox,step};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.SpiderRules=api;
 })(typeof window!=='undefined'?window:globalThis);
