@@ -44,6 +44,7 @@
   locations.colliders.length=0;
   const visuals=GameVisuals.create(T,scene);
   const A=window.SpiderAssault,assaultView=A.createRenderer(T,scene);
+  const convoyView=window.SpiderConvoy.createRenderer(T,scene);
   visuals.environment(renderer);
   // Static city transforms never need recomputing on every animation frame.
   scene.updateMatrixWorld(true);
@@ -64,6 +65,7 @@
   // Slingshot: two taut strands drawn with the same silk renderer as the swing web.
   const slingA = new SpiderWeb.Renderer(scene,T,R), slingB = new SpiderWeb.Renderer(scene,T,R);
   const S = window.SpiderStory;
+  const radar=window.SpiderRadar.create(R,$('radar'),$('radar-panel'),$('six-tracker'));
   // Story beacon: glowing core + tall translucent beam, visible above roofs from far away.
   const beacon = new T.Group(); scene.add(beacon); beacon.visible = false;
   const beaconCore = new T.Mesh(new T.OctahedronGeometry(.45), new T.MeshStandardMaterial({color:0xfff1a8,emissive:0xffc948,emissiveIntensity:2.4}));
@@ -141,6 +143,7 @@
   window.addEventListener('keydown', e => {
     if (e.code === 'F5') { e.preventDefault(); if (!e.repeat) toggleCamera(); return; }
     if (e.code === 'Escape') { pause(); return; }
+    if(e.code==='KeyX'&&running&&!paused&&!e.repeat){game.trackConvoy=game.trackConvoy===false;return;}
     if (!codes.includes(e.code) || !running || paused) return;
     e.preventDefault(); keys.add(e.code); if (e.code === 'Space' && !e.repeat) jump = true;
     if (e.code === 'KeyQ' && !e.repeat) trySling();
@@ -159,6 +162,7 @@
     if(!thirdPerson)return d;
     const view=C.pose(game.player,yaw,pitch,true,R.solids),h=game.hunter;
     const targets=R.rayCandidates(view,d,R.RANGE);
+    const convoy=game.convoy;if(convoy&&['moving','stopped'].includes(convoy.status))targets.push({x:convoy.x-3.55,z:convoy.z-1.55,w:7.1,d:3.1,y0:0,h:3.1});
     if(game.mode==='story')targets.push({x:h.x-.65,z:h.z-.65,w:1.3,d:1.3,y0:h.y-h.r,h:h.y-h.r+3.2});
     return C.aim(game.player,view,d,targets,R.RANGE);
   }
@@ -219,7 +223,8 @@
     const blackKey=dark>0?bo.id+':'+dark.toFixed(2):'';
     if(blackKey!==lastBlack){city.blackout(dark>0?bo:null,dark);lastBlack=blackKey;}
     const goal=game.mode==='story'&&running?S.objective(game):null;
-    beacon.visible=!!goal&&(goal.kind==='drive'||goal.kind==='rescue')&&!ending&&game.state!=='won';
+    radar.update(game,yaw,now,running&&!ending&&game.state==='playing',goal);
+    beacon.visible=!!goal&&(goal.kind==='drive'||goal.kind==='rescue'||goal.kind==='convoy')&&!ending&&game.state!=='won';
     if(beacon.visible){beacon.position.set(goal.x,goal.y,goal.z);beaconCore.rotation.y=now/400;beaconCore.position.y=Math.sin(now/300)*.15;}
     if(now-lastHud>=50 || !active){
     lastHud=now;
@@ -245,7 +250,7 @@
     const assault=A.warning(game);
     $('assault-status').hidden=!assault||!active;
     if(assault){
-      $('assault-status').textContent=`АРАХНА · ${assault.count} ПРОТИВНИКОВ · ${R.blind(game)?'СВЯЗЬ ПОДАВЛЕНА ЩИТКОМ':'ПОЛНАЯ МОБИЛИЗАЦИЯ'}`;
+      $('assault-status').textContent=`АРАХНА · ${assault.count} ПРОТИВНИКОВ · ${R.blind(game)?'СВЯЗЬ ПОДАВЛЕНА ЩИТКОМ':game.assault.campaign==='convoy'?'ОХРАНА КОНВОЯ №0':'ПОЛНАЯ МОБИЛИЗАЦИЯ'}`;
       if((assault.fire||assault.hit||assault.car)&&active){$('danger').hidden=false;$('danger').textContent=assault.text;}
     }
     const message = free ? null : S.radioAt(game.elapsed, story);
@@ -258,7 +263,7 @@
       const rel=Math.atan2(-(goal.x-p.x),-(goal.z-p.z))-yaw, arrows=['↑','↖','←','↙','↓','↘','→','↗'];
       const dir=arrows[((Math.round(rel/(Math.PI/4))%8)+8)%8], m=Math.round(Math.hypot(goal.x-p.x,goal.y-p.y,goal.z-p.z));
       $('objective-label').textContent=goal.label;
-      $('objective-meta').textContent=`${dir} ${m} м · ${goal.left} с`+(goal.progress?` · ${goal.kind==='rescue'?'замки':'антидот'} ${Math.round(goal.progress*100)}%`:'');
+      $('objective-meta').textContent=`${dir} ${m} м · ${goal.left} с`+(goal.progress?` · ${goal.kind==='convoy'?'конвой':goal.kind==='rescue'?'замки':'антидот'} ${Math.round(goal.progress*100)}%`:'');
     }
     $('damage').style.opacity = game.invulnerable>1.1 ? .7 : 0;
     $('crosshair').classList.toggle('ready', !!(R.hunterAim(game,aimDirection())||R.aim(game, aimDirection())));
@@ -277,7 +282,7 @@
       else{hunter.root.position.set(0,-152.7,7);hunter.root.rotation.set(0,Math.PI,0);}
       $('hint').textContent=endingId==='cells'?'ЗАМКИ ОТКРЫТЫ · ПОДОПЫТНЫЕ ВЫХОДЯТ ИЗ СЛУЖЕБНОГО ХОДА':allies?'ШЛЮЗ ОТКРЫТ · СЕДЬМОЙ И ШЕСТОЙ УХОДЯТ В ТОННЕЛЬ':'ШЛЮЗ ОТКРЫТ · ОБЪЕКТ №7 УХОДИТ В ТОННЕЛЬ';
       $('crosshair').hidden=true; $('objective').hidden=true;
-      if(t>=1){ending=0;const e=S.ENDINGS[endingId],st=S.state(game);panel(e.title,`${e.text} Улики: ${st.drives}/2 · Шестой: ${st.helped?'спасён':'остался Охотником'}.`,'Сыграть Ночь Охоты снова');}
+      if(t>=1){ending=0;const e=S.ENDINGS[endingId],st=S.state(game);panel(e.title,`${e.text} Улики: ${st.drives}/2 · Шестой: ${st.helped?'спасён':'остался Охотником'}. Конвой №0: ${st.convoyRescued?'шестеро спасены, помогли с кодами замков':'ушёл без освобождения'}.`,'Сыграть Ночь Охоты снова');}
     } else {
       $('crosshair').hidden=game.state==='won';
       if(game.state==='won'){if(endingId==='cells')visuals.shot(camera,0);else{camera.position.set(0,-150,-19);camera.rotation.set(0,0,0);}}
@@ -285,6 +290,7 @@
     city.update(camera);
     locations.update(renderDelta,game.elapsed,camera,dark>0?bo:null,dark);
     assaultView.update(game);
+    convoyView.update(game);visuals.updateSky(camera);
     if(lastShadow===-Infinity || now-lastShadow>=33&&(camera.position.distanceToSquared(shadowPosition)>.25 || (active||ending)&&now-lastShadow>=100)){
       updateSun(camera.position);shadowPosition.copy(camera.position);lastShadow=now;renderer.shadowMap.needsUpdate=true;
     }

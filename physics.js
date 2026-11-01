@@ -29,29 +29,73 @@
   }
   for(const b of buildings){b.y0=0;for(const p of roofParts(b))part(b,...p);}
   // Index actual AABBs of buildings and rooftop parts, including cell edges.
-  const cells=new Map(),CELL=BLOCK;
-  for(const b of solids){
+  // Small cells keep individual stair flights local instead of returning an
+  // entire furnished high-rise for each of the 120 physics ticks per second.
+  const cells=new Map(),CELL=4;
+  function rebuildIndex(){cells.clear();for(const b of solids){
+    if(b.disabled)continue;
     for(let z=Math.floor(b.z/CELL);z<=Math.floor((b.z+b.d)/CELL);z++)
       for(let x=Math.floor(b.x/CELL);x<=Math.floor((b.x+b.w)/CELL);x++){
         const key=x+','+z;if(!cells.has(key))cells.set(key,[]);cells.get(key).push(b);
       }
+  }}
+  rebuildIndex();
+  const publicBuildings=buildings.filter(b=>b.type===4||b.type===5);
+  let interiorsReady=false;
+  function groundHeight(x,z){
+    if(!interiorsReady)return 0;
+    const ix=Math.floor((x+WORLD/2-7)/BLOCK),iz=Math.floor((z+WORLD/2-7)/BLOCK);
+    // Footprints are offset by up to two metres from the regular grid.
+    for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){
+      const col=ix+dx,row=iz+dz;if(col<0||row<0||col>=GRID||row>=GRID)continue;
+      const b=buildings[row*GRID+col];
+      if(b.type===5&&x>b.x&&x<b.x+b.w&&z>b.z&&z<b.z+b.d)return -3.2;
+    }
+    return 0;
   }
-  function query(minX,minZ,maxX,maxZ){
+  function installLocations(colliders){
+    if(interiorsReady)return;
+    interiorsReady=true;
+    const replaced=new Set(colliders.map(c=>c.parent));
+    for(let i=0;i<solids.length;i++){
+      const s=solids[i],b=buildings[s.part?s.parent:s.id];
+      if(b&&replaced.has(b.id)&&s.kind!=='panel')solids[i]={...s,y0:b.h,h:b.h,disabled:true};
+    }
+    for(const c of colliders){
+      const b=buildings[c.parent],id=solids.length;
+      // Parent is optional in the world-AABB contract. Give independent shapes
+      // distinct anchor identities when it is absent (not a shared sentinel).
+      solids.push({x:c.min.x,z:c.min.z,w:c.max.x-c.min.x,d:c.max.z-c.min.z,y0:c.min.y,h:c.max.y,id,part:true,parent:b?b.id:id,interior:true,noClimb:!!c.noClimb,kind:c.kind});
+    }
+    rebuildIndex();
+  }
+  function query(minX,minZ,maxX,maxZ,minY=-Infinity,maxY=Infinity){
     const found=new Set();
     for(let z=Math.floor(minZ/CELL);z<=Math.floor(maxZ/CELL);z++)
       for(let x=Math.floor(minX/CELL);x<=Math.floor(maxX/CELL);x++){
-        const cell=cells.get(x+','+z);if(cell)for(const b of cell)found.add(b);
+        const cell=cells.get(x+','+z);if(cell)for(const b of cell)if(b.h>=minY&&b.y0<=maxY)found.add(b);
       }
     // Stable order preserves collision resolution and ray tie-breaking.
     return [...found].sort((a,b)=>a.id-b.id);
   }
-  function nearby(p,pad=p.r+.3){return query(p.x-pad,p.z-pad,p.x+pad,p.z+pad);}
-  function rayCandidates(o,d,max,pad=0){return query(Math.min(o.x,o.x+d.x*max)-pad,Math.min(o.z,o.z+d.z*max)-pad,Math.max(o.x,o.x+d.x*max)+pad,Math.max(o.z,o.z+d.z*max)+pad);}
+  function nearby(p,pad=p.r+.3){return query(p.x-pad,p.z-pad,p.x+pad,p.z+pad,p.y-p.r-STEP_HEIGHT,p.y+p.r+STEP_HEIGHT);}
+  function rayCandidates(o,d,max,pad=0){
+    // Query a corridor, not the giant rectangle of a diagonal web shot.
+    const count=Math.max(1,Math.ceil(Math.max(Math.abs(d.x),Math.abs(d.z))*max/CELL)),found=new Set();
+    for(let i=0;i<count;i++){
+      const a=max*i/count,b=max*(i+1)/count;
+      const x=o.x+d.x*a,z=o.z+d.z*a,tx=o.x+d.x*b,tz=o.z+d.z*b;
+      const low=Math.min(o.y+d.y*a,o.y+d.y*b)-pad,high=Math.max(o.y+d.y*a,o.y+d.y*b)+pad;
+      for(const s of query(Math.min(x,tx)-pad,Math.min(z,tz)-pad,Math.max(x,tx)+pad,Math.max(z,tz)+pad,low,high))
+        if(s.h>=low&&s.y0<=high)found.add(s);
+    }
+    return [...found].sort((a,b)=>a.id-b.id);
+  }
   function body(x,y,z,r=RADIUS){return {x,y,z,r,vx:0,vy:0,vz:0,grounded:false,climbing:false,fly:false};}
   function createGame(mode='story'){return {mode:mode==='free'?'free':'story',player:body(0,1,0),hunter:body(0,1,27,.65),elapsed:0,hp:3,invulnerable:0,attack:0,state:'playing',web:null};}
   function wall(p){
     for(const b of nearby(p)){
-      if(p.y-p.r>=b.h+.12||p.y+p.r<=b.y0)continue;
+      if(b.disabled||b.noClimb||(b.interior&&b.h<=p.y-p.r+STEP_HEIGHT+CONTACT)||p.y-p.r>=b.h+.12||p.y+p.r<=b.y0)continue;
       if(p.z>b.z-p.r && p.z<b.z+b.d+p.r){
         if(Math.abs(p.x-(b.x-p.r))<.25)return {b,nx:-1,nz:0};
         if(Math.abs(p.x-(b.x+b.w+p.r))<.25)return {b,nx:1,nz:0};
@@ -62,31 +106,78 @@
       }
     }return null;
   }
-  function move(p,dt){
-    const overlap=b=>p.y+p.r>b.y0 && p.y-p.r<b.h-.05;
-    for(const axis of ['x','z']){
-      p[axis]+=p['v'+axis]*dt;
-      for(const b of nearby(p)){
-        if(!overlap(b))continue;
-        if(p.x+p.r>b.x && p.x-p.r<b.x+b.w && p.z+p.r>b.z && p.z-p.r<b.z+b.d){
-          p[axis]=p['v'+axis]>0 ? b[axis]-p.r : b[axis]+(axis==='x'?b.w:b.d)+p.r;
-          p['v'+axis]=0;
-        }
-      }
-      const limited=clamp(p[axis],-WORLD/2+p.r,WORLD/2-p.r);
-      if(limited!==p[axis])p['v'+axis]=0;
-      p[axis]=limited;
-    }
-    const bottom=p.y-p.r;p.y+=p.vy*dt;p.grounded=false;
+  const STEP_HEIGHT=.3,CONTACT=1e-6;
+  function footprint(p,b,x=p.x,z=p.z){
+    return x+p.r>b.x+CONTACT&&x-p.r<b.x+b.w-CONTACT&&z+p.r>b.z+CONTACT&&z-p.r<b.z+b.d-CONTACT;
+  }
+  function clearBody(p,x,y,z){
+    return !query(x-p.r,z-p.r,x+p.r,z+p.r,y-p.r,y+p.r).some(b=>!b.disabled&&footprint(p,b,x,z)&&y+p.r>b.y0+CONTACT&&y-p.r<b.h-CONTACT);
+  }
+  // Sweep rather than test only the endpoint: thin doors/ceilings remain solid at sling speed.
+  function verticalMove(p,amount){
+    let y=p.y+amount,landed=false;
     for(const b of nearby(p)){
-      if(p.x+p.r>b.x && p.x-p.r<b.x+b.w && p.z+p.r>b.z && p.z-p.r<b.z+b.d && bottom>=b.h-.05 && p.y-p.r<=b.h){
-        p.y=b.h+p.r;p.vy=0;p.grounded=true;
-      }
+      if(b.disabled||!footprint(p,b))continue;
+      if(amount>0&&p.y+p.r<=b.y0+CONTACT&&y+p.r>=b.y0)y=Math.min(y,b.y0-p.r);
+      if(amount<=0&&p.y-p.r>=b.h-CONTACT&&y-p.r<=b.h){y=Math.max(y,b.h+p.r);landed=true;}
     }
-    if(p.y<p.r){p.y=p.r;p.vy=0;p.grounded=true;}
-    if(p.y>180){p.y=180;p.vy=Math.min(0,p.vy);}
+    const ground=groundHeight(p.x,p.z)+p.r;
+    // The implicit street is one-sided; never lift an underground body through a ceiling.
+    if(amount<=0&&p.y>=ground-CONTACT&&y<=ground){y=Math.max(y,ground);landed=true;}
+    const stopped=Math.abs(y-(p.y+amount))>CONTACT;
+    p.y=y;if(stopped||landed)p.vy=0;
+    p.grounded=landed;
+    return stopped;
+  }
+  function move(p,dt){
+    if(!(dt>0))return;
+    // A bounded travel distance also keeps diagonal corner and staircase contacts local.
+    const count=Math.max(1,Math.ceil(Math.max(Math.abs(p.vx),Math.abs(p.vy),Math.abs(p.vz))*dt/Math.min(.1,p.r*.25)));
+    const slice=dt/count;
+    for(let i=0;i<count;i++){
+      const walking=p.grounded&&!p.climbing&&p.vy<=0,feet=p.y-p.r;
+      for(const axis of ['x','z']){
+        const delta=p['v'+axis]*slice;if(!delta)continue;
+        const start=p[axis],target=clamp(start+delta,-WORLD/2+p.r,WORLD/2-p.r);
+        const x=axis==='x'?target:p.x,z=axis==='z'?target:p.z;
+        const candidates=query(Math.min(p.x,x)-p.r,Math.min(p.z,z)-p.r,Math.max(p.x,x)+p.r,Math.max(p.z,z)+p.r,p.y-p.r-STEP_HEIGHT,p.y+p.r+STEP_HEIGHT);
+        const hits=candidates.filter(b=>!b.disabled&&footprint(p,b,x,z)&&p.y+p.r>b.y0+CONTACT&&p.y-p.r<b.h-CONTACT);
+        let stepped=false;
+        if(hits.length&&walking){
+          const top=Math.max(...hits.map(b=>b.h)),rise=top-(p.y-p.r);
+          // Every blocking shape must be a low riser. A tall door or wall cannot be stepped through.
+          if(rise>CONTACT&&top-feet<=STEP_HEIGHT+CONTACT&&clearBody(p,p.x,top+p.r,p.z)&&clearBody(p,x,top+p.r,z)){
+            // Check the entire vertical lift at the old footprint, not only the raised head.
+            const head=p.y+p.r,raisedHead=top+2*p.r;
+            const ceiling=candidates.some(b=>!b.disabled&&footprint(p,b)&&b.y0>=head-CONTACT&&b.y0<raisedHead-CONTACT&&b.h>head+CONTACT);
+            if(!ceiling){p.y=top+p.r;p.vy=0;stepped=true;}
+          }
+        }
+        let end=target;
+        if(hits.length&&!stepped){
+          for(const b of hits){
+            const edge=delta>0?b[axis]-p.r:b[axis]+(axis==='x'?b.w:b.d)+p.r;
+            // Do not eject an already overlapping body to the opposite face.
+            end=delta>0?Math.min(end,Math.max(start,edge)):Math.max(end,Math.min(start,edge));
+          }
+        }
+        p[axis]=end;if(Math.abs(end-(start+delta))>CONTACT)p['v'+axis]=0;
+      }
+      const down=p.vy*slice;
+      verticalMove(p,down);
+      // Follow only a nearby lower tread, never snap a falling/jumping body onto a distant roof.
+      if(walking&&!p.grounded&&p.vy<=0){
+        let support=-Infinity;
+        for(const b of nearby(p))if(!b.disabled&&footprint(p,b)&&b.h<=p.y-p.r+CONTACT&&b.h>=feet-STEP_HEIGHT-CONTACT)support=Math.max(support,b.h);
+        const ground=groundHeight(p.x,p.z);
+        if(ground<=p.y-p.r+CONTACT&&ground>=feet-STEP_HEIGHT-CONTACT)support=Math.max(support,ground);
+        if(Number.isFinite(support)&&clearBody(p,p.x,support+p.r,p.z))verticalMove(p,support+p.r-p.y);
+      }
+      if(p.y>180){p.y=180;p.vy=Math.min(0,p.vy);}
+    }
   }
   function rayBox(o,d,b,max=RANGE){
+    if(b.disabled)return null;
     let near=0,far=max;
     for(const [axis,lo,hi] of [['x',b.x,b.x+b.w],['y',b.y0||0,b.h],['z',b.z,b.z+b.d]]){
       if(Math.abs(d[axis])<1e-8){if(o[axis]<lo||o[axis]>hi)return null;}
@@ -124,6 +215,7 @@
     const d={x:dx/dist,y:dy/dist,z:dz/dist};
     // Intersect the open interior: touching a facade/roof is valid, penetrating it is not.
     for(const b of rayCandidates(p,d,dist)){
+      if(b.disabled)continue;
       let near=0,far=dist;
       for(const [axis,lo,hi] of [['x',b.x,b.x+b.w],['y',b.y0||0,b.h],['z',b.z,b.z+b.d]]){
         const min=lo+1e-6,max=hi-1e-6;
@@ -157,6 +249,19 @@
     if(g.state!=='playing')return false;
     const caught=hunterAim(g,d),hit=aim(g,d),p=g.player;
     cancelSling(g);
+    // Exact aimed hit on the optional transport; facades and Sixth occlude it.
+    const c=g.convoy,n=Math.hypot(d.x,d.y,d.z);
+    if(c&&['moving','stopped'].includes(c.status)&&n>0){
+      const f={x:d.x/n,y:d.y/n,z:d.z/n};
+      const t=rayBox(p,f,{x:c.x-3.55,z:c.z-1.55,w:7.1,d:3.1,y0:0,h:3.1},RANGE);
+      const distance=q=>q?Math.hypot(q.x-p.x,q.y-p.y,q.z-p.z):Infinity;
+      if(t!==null&&t<=RANGE&&t<distance(hit)&&t<distance(caught)){
+        if(g.web)cutWeb(g,'release');
+        if(g.elapsed>=(c.nextWeb||0)){c.hits=Math.min(3,c.hits+1);c.nextWeb=g.elapsed+.3;if(c.hits>=3)c.stoppedUntil=g.elapsed+14;}
+        g.webHit={x:p.x+f.x*t,y:p.y+f.y*t,z:p.z+f.z*t,sx:-f.x,sy:-f.y,sz:-f.z,at:g.elapsed,shot:(g.shots=(g.shots||0)+1)};
+        return true;
+      }
+    }
     if(caught){
       if(g.web)cutWeb(g,'release');
       const h=g.hunter;h.webUntil=g.elapsed+5;h.lunge=0;h.windup=0;h.windupStarted=false;
@@ -175,7 +280,9 @@
     g.web={...hit,len:Math.max(3,dist*.74),minLen:3,maxLen:dist+Math.max(8,dist*.25),tx,ty,tz,shot:(g.shots=(g.shots||0)+1)};
     p.slingFlight=false;
     p.vx+=nx*20+tx*12;p.vy+=ny*20+ty*12;p.vz+=nz*20+tz*12;p.fly=true;
-    p.y=Math.max(p.y,p.r+2);p.vy=Math.max(p.vy,8.5);p.grounded=false;p.climbing=false;
+    const lift=groundHeight(p.x,p.z)+p.r+2-p.y;
+    if(lift>0)verticalMove(p,lift);
+    p.vy=Math.max(p.vy,8.5);p.grounded=false;p.climbing=false;
     return true;
   }
   // Each click selects one exact surface. A third click (or Space) fires the ready sling.
@@ -227,7 +334,7 @@
     if(webBlocked(p,s.a)||(s.b&&webBlocked(p,s.b))||Math.hypot(s.a.x-p.x,s.a.y-p.y,s.a.z-p.z)>RANGE){cancelSling(g);return;}
     if(!s.b)return;
     s.charge=Math.min(SLING_CHARGE,s.charge+dt);
-    const back=3.5*s.charge/SLING_CHARGE,tx=s.ox-s.dx*back,ty=Math.max(p.r+.05,s.oy-s.dy*back),tz=s.oz-s.dz*back;
+    const back=3.5*s.charge/SLING_CHARGE,tx=s.ox-s.dx*back,ty=Math.max(groundHeight(p.x,p.z)+p.r+.05,s.oy-s.dy*back),tz=s.oz-s.dz*back;
     p.vx=(tx-p.x)*8;p.vy=(ty-p.y)*8;p.vz=(tz-p.z)*8;
     p.fly=true;p.climbing=false;
   }
@@ -236,7 +343,17 @@
     if(!touch)return;
     p.vy=up?speed:down?-6:0;
     if(up&&p.y>=touch.b.h+p.r-.18){
-      p.y=touch.b.h+p.r+.03;p.x-=touch.nx*.85;p.z-=touch.nz*.85;p.climbing=false;
+      const y=touch.b.h+p.r+.03,x=p.x-touch.nx*.85,z=p.z-touch.nz*.85;
+      // Mount a nearby ledge only with headroom along both parts of the move.
+      if(clearBody(p,p.x,y,p.z)&&clearBody(p,x,y,z)){
+        const before=p.y;verticalMove(p,y-p.y);
+        if(Math.abs(p.y-y)<CONTACT){
+          // Sweep the horizontal mount in short segments; a neighbouring wall can block it.
+          let clear=true;
+          for(let i=1;i<=9;i++)if(!clearBody(p,p.x+(x-p.x)*i/9,y,p.z+(z-p.z)*i/9)){clear=false;break;}
+          if(clear){p.x=x;p.z=z;p.climbing=false;}else p.y=before;
+        }
+      }
     }
   }
   function rope(g,dt){
@@ -292,7 +409,16 @@
     if(p.jumpBuffer>0&&!g.web&&!g.sling&&(p.coyote>0||nearby)){
       p.jumpBuffer=0;p.coyote=0;p.grounded=false;p.fly=true;
       p.vy=10.5;
-      if(nearby){p.vx=nearby.nx*13;p.vz=nearby.nz*13;p.x+=nearby.nx*.3;p.z+=nearby.nz*.3;p.fly=true;}
+      if(nearby){
+        p.vx=nearby.nx*13;p.vz=nearby.nz*13;
+        // Apply the separation only if the whole short path has room; another
+        // wall may be directly behind the player in a narrow doorway.
+        const x=p.x,z=p.z;
+        let clear=true;
+        for(let i=1;i<=3;i++)if(!clearBody(p,x+nearby.nx*.1*i,p.y,z+nearby.nz*.1*i)){clear=false;break;}
+        if(clear){p.x=x+nearby.nx*.3;p.z=z+nearby.nz*.3;}
+        p.fly=true;
+      }
     }
     // Sever before applying any rope force, not after it has already braked the player.
     if(g.web&&webBlocked(p,g.web))cutWeb(g,'wall');
@@ -304,8 +430,8 @@
     move(p,dt);
     if(g.sling&&g.sling.b)p.grounded=false;
     if(g.web){
-      const floor=p.r+2;
-      if(p.y<floor){p.y=floor;p.vy=Math.max(0,p.vy);}
+      const floor=groundHeight(p.x,p.z)+p.r+2;
+      if(p.y<floor){verticalMove(p,floor-p.y);p.vy=Math.max(0,p.vy);}
       else if(p.y<floor+2)p.vy=Math.max(p.vy,(floor+2-p.y)*4.5);
       p.grounded=false;
       if(webBlocked(p,g.web))cutWeb(g,'wall');
@@ -326,6 +452,21 @@
   // 'ally' (helped Object No. 6, follows at a distance). An active blackout makes a chasing hunter lose the trail.
   function blind(g){return !!(g.blackout&&g.elapsed<g.blackout.until);}
   function hostile(g){const m=g.hunter.mode||'chase';return m==='chase';}
+  // Small collision-aware steering fan. Bounded ray count, reused at 4 Hz by
+  // Sixth and 10 Hz by infantry; no city-wide path search in the physics loop.
+  function navigate(actor,goal,side=1){
+    const dx=goal.x-actor.x,dz=goal.z-actor.z,n=Math.hypot(dx,dz)||1,angle=Math.atan2(dz,dx),range=Math.min(6,n);
+    let best=-Infinity,out={x:dx/n,z:dz/n};
+    const origin={x:actor.x,y:actor.y+.2,z:actor.z};
+    const shapes=query(actor.x-range-2,actor.z-range-2,actor.x+range+2,actor.z+range+2,origin.y,origin.y);
+    for(const turn of [0,side*.5,-side*.5,side*1,-side*1,side*1.55,-side*1.55,Math.PI]){
+      const direction={x:Math.cos(angle+turn),y:0,z:Math.sin(angle+turn)};let clear=range;
+      for(const b of shapes){const expanded={x:b.x-actor.r,z:b.z-actor.r,w:b.w+actor.r*2,d:b.d+actor.r*2,y0:b.y0,h:b.h};const t=rayBox(origin,direction,expanded,range);if(t!==null)clear=Math.min(clear,t);}
+      const score=Math.min(1,clear/Math.max(1,range))*2+Math.cos(turn)*.8+(turn===0?.1:0);
+      if(score>best){best=score;out={x:direction.x*(clear>.3?1:0),z:direction.z*(clear>.3?1:0)};}
+    }
+    return out;
+  }
   function hunterStep(g,dt){
     const p=g.player,h=g.hunter,k=g.elapsed/DURATION,mode=h.mode||'chase';
     h.cd=Math.max(0,(h.cd||0)-dt);h.windup=Math.max(0,(h.windup||0)-dt);
@@ -335,22 +476,35 @@
       climb(h,null,false,false,dt);move(h,dt);return;
     }
     const lost=mode==='chase'&&blind(g);h.lost=lost;
+    h.senseIn=(h.senseIn||0)-dt;
+    if(h.senseIn<=0){
+      h.senseIn=.25;const d={x:p.x-h.x,y:p.y-h.y,z:p.z-h.z},n=Math.hypot(d.x,d.y,d.z)||1;
+      const f={x:d.x/n,y:d.y/n,z:d.z/n};
+      h.sees=!lost&&!rayCandidates(h,f,n).some(b=>{const t=rayBox(h,f,b,n);return t!==null&&t<n-.1;});
+      if(h.sees||Math.hypot(d.x,d.z)<10)h.memory={x:p.x,y:p.y,z:p.z,at:g.elapsed};
+    }
     // While blind the hunter walks to the shorted panel instead of tracking the spider.
-    const goal=lost?g.blackout:p;
-    const lead=lost?0:Math.min(.2,Math.hypot(p.x-h.x,p.z-h.z)/50),tx=goal.x+(lost?0:p.vx*lead),tz=goal.z+(lost?0:p.vz*lead);
+    let goal=lost?g.blackout:mode==='ally'?p:h.sees?p:(h.memory||{x:h.x,y:h.y,z:h.z});
+    if(!lost&&mode!=='ally'&&!h.sees&&h.memory&&g.elapsed-h.memory.at>6){const a=g.elapsed*.4;goal={x:h.memory.x+Math.cos(a)*7,y:h.memory.y,z:h.memory.z+Math.sin(a)*7};}
+    const lead=lost||!h.sees?0:Math.min(.65,Math.hypot(p.x-h.x,p.z-h.z)/35),tx=goal.x+p.vx*lead,tz=goal.z+p.vz*lead;
     const dx=tx-h.x,dz=tz-h.z,dist=Math.hypot(dx,dz),real=Math.hypot(p.x-h.x,p.z-h.z);
     const speed=mode==='ally'?(real>9?7.5:0):lost?3.2:5.8+1.4*k+(h.dosed?1.2:0);
     if(mode==='ally'){h.lunge=0;h.windup=0;h.windupStarted=false;h.vx=dist>.5?dx/dist*speed:0;h.vz=dist>.5?dz/dist*speed:0;}
     else if(h.lunge>0){
       h.lunge-=dt;h.vx=h.dx*(speed+7);h.vz=h.dz*(speed+7);
     }else if(h.windupStarted&&h.windup<=0){
-      h.windupStarted=false;h.lunge=.4;const n=Math.hypot(dx,dz)||1;h.dx=dx/n;h.dz=dz/n;
+      h.windupStarted=false;h.lunge=.4;const a=h.attackAim||{x:tx,z:tz},ax=a.x-h.x,az=a.z-h.z,n=Math.hypot(ax,az)||1;h.dx=ax/n;h.dz=az/n;
     }else if(h.windup>0){h.vx=h.vz=0;}
     else{
       h.vx=dist>.5?dx/dist*speed:0;h.vz=dist>.5?dz/dist*speed:0;
-      if(!lost&&h.grounded&&!h.cd&&real<10&&real>3&&Math.abs(p.y-h.y)<3){h.windup=.65;h.windupStarted=true;h.cd=5.5-k;}
+      if(!lost&&h.sees&&h.grounded&&!h.cd&&real<10&&real>3&&Math.abs(p.y-h.y)<3){h.attackAim={x:tx,z:tz};h.windup=.65;h.windupStarted=true;h.cd=5.5-k;}
       else if(!lost&&h.grounded&&p.y>h.y+3&&real<12&&!wall(h)){h.vy=13;}
     }
+    if(!h.lunge&&!h.windup&&Math.abs(goal.y-h.y)<3){
+      h.steerIn=(h.steerIn||0)-dt;if(h.steerIn<=0){h.steerIn=.25;h.steer=navigate(h,{x:tx,z:tz},h.dosed?-1:1);}
+      if(dist>.5&&h.steer){h.vx=h.steer.x*speed;h.vz=h.steer.z*speed;}
+    }
+    h.tactic=mode==='ally'?(real>9?'escort':'guard'):lost?'search-panel':h.windup?'ambush':h.sees?'intercept':'search-last-seen';
     const slowed=g.elapsed<(h.webUntil||0);
     if(slowed){h.lunge=0;h.windup=0;h.windupStarted=false;h.vx*=.3;h.vz*=.3;}
     const obstacle=wall(h);
@@ -358,6 +512,6 @@
     if(slowed&&!h.climbing&&h.vy>0)h.vy=Math.min(h.vy,4);
     move(h,dt);
   }
-  const api={GRID,BLOCK,WORLD,DURATION,RANGE,MAX_SPEED,BLACKOUT,SLING_CHARGE,SLING_MIN,SLING_MAX,solids,assistAim,hunterAim,releaseWeb,startSling,slingYaw,releaseSling,cancelSling,cutPanel,blind,hostile,query,rayCandidates,webBlocked,buildings,createGame,wall,move,aim,shootWeb,rayBox,step};
+  const api={navigate,installLocations,groundHeight,publicBuildings,GRID,BLOCK,WORLD,DURATION,RANGE,MAX_SPEED,BLACKOUT,SLING_CHARGE,SLING_MIN,SLING_MAX,solids,assistAim,hunterAim,releaseWeb,startSling,slingYaw,releaseSling,cancelSling,cutPanel,blind,hostile,query,rayCandidates,webBlocked,buildings,createGame,wall,move,aim,shootWeb,rayBox,step};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.SpiderRules=api;
 })(typeof window!=='undefined'?window:globalThis);

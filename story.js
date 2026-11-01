@@ -3,6 +3,7 @@
 (function(root){
   'use strict';
   const R=typeof module!=='undefined'&&module.exports?require('./physics.js'):root.SpiderRules;
+  const C=typeof module!=='undefined'&&module.exports?require('./convoy.js'):root.SpiderConvoy;
   const title='НОЧЬ ОХОТЫ';
   const intro='Ты — Объект №7, паук-мутант из лаборатории «Арахна». За тобой выпустили Охотника. До рассвета 10 минут: продержись, собери улики и реши, кем на самом деле был твой преследователь.';
   const LEVIN='ДОКТОР ЛЕВИН',HUNTER='ОХОТНИК',ARACHNA='«АРАХНА» / ПЕРЕХВАТ';
@@ -43,7 +44,7 @@
     const live=story&&story.radio;
     if(live&&elapsed>=live.at&&elapsed<live.at+live.duration)return live;
     if(story&&story.freed&&elapsed>=600)return {from:LEVIN,text:'Все вышли. Служебный ход свободен. Седьмой, ты открыл не только свою клетку.'};
-    if(story&&story.rescue&&elapsed>=480&&elapsed<498)return {from:LEVIN,text:'Маяк ведёт к аварийному терминалу лаборатории. Держи E пять секунд рядом с ним, чтобы освободить подопытных. Или продолжай побег — выбор за тобой.'};
+    if(story&&story.rescue&&elapsed>=480&&elapsed<498)return {from:LEVIN,text:'Маяк ведёт к аварийному терминалу лаборатории. Держи E '+(story.convoyRescued?'три':'пять')+' секунд рядом с ним, чтобы освободить подопытных. Или продолжай побег — выбор за тобой.'};
     const m=messages.find(m=>elapsed>=m.at&&elapsed<m.at+m.duration);
     if(!m)return null;
     return story&&story.helped&&m.alt?{...m,text:m.alt}:m;
@@ -51,6 +52,11 @@
   function update(g,input={},dt=1/120){
     if(g.mode!=='story'||g.state!=='playing')return;
     const s=state(g),t=g.elapsed,p=g.player,h=g.hunter;
+    C.update(g,input,dt,R);
+    const convoy=g.convoy;
+    if(convoy&&!convoy.announced){convoy.announced=true;say(g,LEVIN,'Конвой №0 везёт шестерых подопытных. Жёлтый маяк ведёт к транспорту: три точных попадания ПКМ остановят его на 14 секунд. Подойди сзади и держи E две секунды. Флешка ждать не будет.',18);}
+    if(convoy&&convoy.status==='rescued'&&!s.fired.convoy){s.fired.convoy=true;say(g,'КОНВОЙ №0 / ОСВОБОЖДЁННЫЕ','Шестеро на свободе! Мы знаем коды аварийных замков: у терминала понадобится три секунды вместо пяти. Встретимся у служебного хода.',14);}
+    if(convoy&&convoy.status==='escaped'&&!s.fired.convoyMissed){s.fired.convoyMissed=true;say(g,LEVIN,'Конвой ушёл в закрытый сектор. Продолжаем побег: улики и лабораторные клетки ещё можно спасти.',9);}
     // События физики: короткое замыкание щитка.
     for(const e of g.events||[])if(e.type==='blackout')say(g,LEVIN,'Квартал обесточен! Охотник ослеп на 15 секунд — уходи из его поля зрения.',8);
     g.events=[];
@@ -84,12 +90,12 @@
     if(t>=RESCUE_AT&&!s.fired.rescue){
       s.fired.rescue=true;
       s.rescue={...pickRoof(g,7),hold:0};
-      say(g,'НЕИЗВЕСТНЫЙ СИГНАЛ','Седьмой… мы ещё в клетках. На крыше лаборатории есть аварийный терминал. Маяк включён. Вернёшься — держи E пять секунд, и замки откроются. До рассвета две минуты.',18);
+      say(g,'НЕИЗВЕСТНЫЙ СИГНАЛ','Седьмой… мы ещё в клетках. На крыше лаборатории есть аварийный терминал. Маяк включён. Вернёшься — держи E '+(s.convoyRescued?'три':'пять')+' секунд, и замки откроются. До рассвета две минуты.',18);
     }
     if(s.rescue&&!s.freed){
       const r=s.rescue,near=Math.hypot(p.x-r.x,p.y-r.y,p.z-r.z)<RESCUE_RANGE;
       r.hold=near&&input.interact?r.hold+dt:0;
-      if(r.hold>=RESCUE_TIME){
+      if(r.hold>=(s.convoyRescued?3:RESCUE_TIME)){
         s.freed=true;
         say(g,LEVIN,s.helped?'Замки открыты! Шестой прикроет служебный ход. Выводи остальных, я отключаю охрану. Сегодня никто не останется в клетке.':'Замки открыты! Я отключаю охрану и веду подопытных к служебному ходу. Держись до рассвета — вы уйдёте вместе.',18);
       }
@@ -99,7 +105,8 @@
   // HUD: текущая цель сюжета, null если цели нет.
   function objective(g){
     const s=state(g),t=g.elapsed;
-    if(s.rescue&&!s.freed)return {kind:'rescue',label:'ОТКРЫТЫЕ КЛЕТКИ · ДЕРЖИ E У ТЕРМИНАЛА',x:s.rescue.x,y:s.rescue.y,z:s.rescue.z,left:Math.max(0,Math.ceil(R.DURATION-t)),progress:Math.min(1,s.rescue.hold/RESCUE_TIME)};
+    if(s.rescue&&!s.freed)return {kind:'rescue',label:'ОТКРЫТЫЕ КЛЕТКИ · ДЕРЖИ E '+(s.convoyRescued?'3':'5')+' С У ТЕРМИНАЛА',x:s.rescue.x,y:s.rescue.y,z:s.rescue.z,left:Math.max(0,Math.ceil(R.DURATION-t)),progress:Math.min(1,s.rescue.hold/(s.convoyRescued?3:RESCUE_TIME))};
+    const convoyGoal=C.objective(g);if(convoyGoal&&(!s.objective||g.trackConvoy!==false)){if(s.objective)convoyGoal.label+=' · X: ФЛЕШКА';return convoyGoal;}
     if(s.objective&&s.objective.type==='drive')return {kind:'drive',label:s.objective.name,x:s.objective.x,y:s.objective.y,z:s.objective.z,left:Math.max(0,Math.ceil(s.objective.until-t))};
     if(s.choice&&!s.decided)return {kind:'help',label:'ПОМОЧЬ ШЕСТОМУ — ПОДОЙДИ И ДЕРЖИ E',x:g.hunter.x,y:g.hunter.y,z:g.hunter.z,left:Math.max(0,Math.ceil(s.choice.until-t)),progress:Math.min(1,s.help/HELP_TIME)};
     return null;

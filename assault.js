@@ -6,7 +6,8 @@
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const config={trooper:{range:70,delay:.85,reload:2.8,speed:110},mg:{range:105,delay:1.0,reload:2.3,speed:140},rpg:{range:140,delay:1.7,reload:6.2,speed:36},heli:{range:150,delay:1.2,reload:3.1,speed:115},plane:{range:175,delay:2.2,reload:9,speed:44}};
   function muzzle(u){return {x:u.x,y:u.y+(u.type==='trooper'?.55:u.type==='heli'?-1:u.type==='plane'?-.4:2),z:u.z};}
-  function eligible(g){return g.mode==='story'&&g.story&&g.story.decided&&!g.story.helped;}
+  function declined(g){return !!(g.story&&g.story.decided&&!g.story.helped);}
+  function eligible(g){return g.mode==='story'&&(declined(g)||!!(g.convoy&&g.convoy.hits>0&&['moving','stopped'].includes(g.convoy.status)));}
   function street(v,R){return clamp(Math.round((v+R.WORLD/2-2)/R.BLOCK),0,R.GRID-1)*R.BLOCK-R.WORLD/2+2;}
   function spawn(s,g,R,type,slot){
     if(s.units.length>=MAX_UNITS)return;
@@ -47,6 +48,11 @@
     }
     u.windup=0;u.aim=null;u.cooldown=c.reload;s.fired++;
   }
+  function friendlyLane(s,u,target){
+    const a=muzzle(u),dx=target.x-a.x,dy=target.y-a.y,dz=target.z-a.z,length=dx*dx+dy*dy+dz*dz||1;
+    return s.units.some(v=>{if(v===u)return false;const b=muzzle(v),t=((b.x-a.x)*dx+(b.y-a.y)*dy+(b.z-a.z)*dz)/length;
+      return t>.02&&t<.98&&Math.hypot(b.x-a.x-dx*t,b.y-a.y-dy*t,b.z-a.z-dz*t)<(v.type==='trooper'?.9:2);});
+  }
   function drive(u,target,dt,R){
     // Road-junction routing never cuts a diagonal through a building shell.
     if(!u.node||Math.hypot(u.node.x-u.x,u.node.z-u.z)<.15){
@@ -66,11 +72,27 @@
       u.yaw=Math.atan2(-dx,-dz);
     }
   }
+  function coverPoint(u,p,R){
+    const shapes=R.query(u.x-12,u.z-12,u.x+12,u.z+12,u.y+.5,u.y+.5).filter(b=>b.w>1&&b.d>1).slice(0,4);
+    let best=null,score=Infinity;
+    for(const b of shapes)for(const x of [b.x-u.r-.65,b.x+b.w+u.r+.65])for(const z of [b.z-u.r-.65,b.z+b.d+u.r+.65]){
+      const point={x,y:u.y+.55,z},distance=Math.hypot(x-u.x,z-u.z);
+      if(distance>12||distance<.5||!blocked(point,p,R)||blocked(muzzle(u),point,R))continue;
+      if(distance<score){best=point;score=distance;}
+    }
+    return best;
+  }
   function flank(u,p,dt,R){
     const angle=u.phase+(u.id%2?1:-1)*.45;
-    const x=p.x+Math.cos(angle)*9,z=p.z+Math.sin(angle)*9,dx=x-u.x,dz=z-u.z,n=Math.hypot(dx,dz)||1;
-    const oldX=u.x,oldZ=u.z;u.vx=n>1?dx/n*5.2:0;u.vz=n>1?dz/n*5.2:0;u.vy=(u.vy||0)-24*dt;
-    R.move(u,dt);u.speed=Math.hypot(u.x-oldX,u.z-oldZ)/dt;u.yaw=Math.atan2(-dx,-dz);u.tactic='flank';
+    const radius=u.cooldown>1.3?18:u.id%3===0?22:10;
+    u.coverTimer=(u.coverTimer||0)-dt;
+    if(u.coverTimer<=0){u.coverTimer=.8;u.cover=u.cooldown>1.3?coverPoint(u,p,R):null;}
+    if(u.cooldown<=1.3)u.cover=null;
+    const x=u.cover?u.cover.x:p.x+Math.cos(angle)*radius,z=u.cover?u.cover.z:p.z+Math.sin(angle)*radius,dx=x-u.x,dz=z-u.z,n=Math.hypot(dx,dz)||1;
+    const direction=R.navigate(u,{x,z},u.id%2?1:-1);
+    const oldX=u.x,oldZ=u.z;u.vx=n>1?direction.x*5.2:0;u.vz=n>1?direction.z*5.2:0;u.vy=(u.vy||0)-24*dt;
+    R.move(u,dt);u.speed=Math.hypot(u.x-oldX,u.z-oldZ)/dt;u.yaw=Math.atan2(-dx,-dz);u.tactic=u.cooldown>1.3?'reload-reposition':u.id%3===0?'support':'flank';
+    if(u.cover)u.tactic='reload-cover';
   }
   function runOver(g,u,oldCar,oldPlayer,R){
     if(u.type!=='mg'&&u.type!=='rpg')return false;
@@ -91,11 +113,18 @@
   function tick(g,s,dt,R){
     s.age+=dt;s.fx=s.fx.filter(f=>(f.ttl-=dt)>0);
     const stages=[0,18,36,72];
-    for(let i=0;i<stages.length;i++)if(s.age>=stages[i]&&!s.waves[i]){s.waves[i]=true;wave(s,g,R,i);}
+    if(s.campaign==='convoy'){
+      if(!s.waves[0]){s.waves[0]=true;spawn(s,g,R,'mg',0);spawn(s,g,R,'rpg',1);for(let i=0;i<4;i++)spawn(s,g,R,'trooper',i+3);}
+    }else for(let i=0;i<stages.length;i++)if(s.age>=stages[i]&&!s.waves[i]){s.waves[i]=true;wave(s,g,R,i);}
     const p=g.player,blind=R.blind(g);
-    if(!blind)s.lastKnown={x:p.x,y:p.y,z:p.z};
+    // Radio shares actual sightings, not the player's hidden coordinates.
+    const spotted=!blind&&s.units.some(u=>Math.hypot(p.x-u.x,p.y-u.y,p.z-u.z)<config[u.type].range&&!blocked(muzzle(u),p,R));
+    if(spotted){s.lastKnown={x:p.x,y:p.y,z:p.z};s.seenAt=s.age;}
     const goal=s.lastKnown,oldPlayer=s.previousPlayer||{x:p.x,y:p.y,z:p.z};
+    let aiming=s.units.filter(u=>u.windup>0).length;
     for(const u of s.units){
+      if(g.elapsed<(u.disabledUntil||0)){u.speed=0;u.windup=0;u.aim=null;u.tactic='stunned';continue;}
+      const sees=!blind&&Math.hypot(p.x-u.x,p.y-u.y,p.z-u.z)<config[u.type].range&&!blocked(muzzle(u),p,R);
       const oldCar={x:u.x,y:u.y,z:u.z};
       if(u.type==='heli'){
         const angle=s.age*.17+u.phase,tx=clamp(goal.x+Math.cos(angle)*58,-R.WORLD/2+6,R.WORLD/2-6),tz=clamp(goal.z+Math.sin(angle)*58,-R.WORLD/2+6,R.WORLD/2-6);
@@ -107,12 +136,14 @@
           const a=Math.atan2(goal.z-u.z,goal.x-u.x);u.node={x:clamp(goal.x+Math.cos(a)*180,-R.WORLD/2+10,R.WORLD/2-10),z:clamp(goal.z+Math.sin(a)*180,-R.WORLD/2+10,R.WORLD/2-10)};
         }
         const dx=u.node.x-u.x,dz=u.node.z-u.z,n=Math.hypot(dx,dz)||1,k=Math.min(1,46*dt/n);u.x+=dx*k;u.z+=dz*k;u.y=Math.max(110,goal.y+38);u.yaw=Math.atan2(-dx,-dz);
-      }else if(u.type==='trooper'&&!blind&&Math.hypot(goal.x-u.x,goal.z-u.z)<26&&!blocked(muzzle(u),goal,R))flank(u,goal,dt,R);
+      }else if(u.type==='trooper'&&Math.hypot(goal.x-u.x,goal.z-u.z)<30)flank(u,goal,dt,R);
       else{
         // Vehicles intercept the next junction rather than chase the player's
         // old footprint; soldiers use streets until a clear flanking route opens.
-        const intercept=u.type!=='trooper'&&!blind?{x:goal.x+p.vx*1.1,y:goal.y,z:goal.z+p.vz*1.1}:goal;
+        const search=!spotted&&s.age-(s.seenAt||0)>6;
+        const intercept=search?{x:goal.x+Math.cos(u.phase+s.age*.12)*R.BLOCK,y:goal.y,z:goal.z+Math.sin(u.phase+s.age*.12)*R.BLOCK}:u.type!=='trooper'&&sees?{x:goal.x+p.vx*1.1,y:goal.y,z:goal.z+p.vz*1.1}:goal;
         drive(u,intercept,dt,R);u.tactic=u.type==='trooper'?'advance':'intercept';
+        if(search)u.tactic='sector-search';
       }
       runOver(g,u,oldCar,oldPlayer,R);
       u.cooldown=Math.max(0,u.cooldown-dt);
@@ -121,10 +152,10 @@
       const distance=Math.hypot(p.x-origin.x,p.y-origin.y,p.z-origin.z);
       if(u.windup>0){
         u.windup-=dt;
-        if(u.windup<=0){if(!blocked(origin,u.aim,R))fire(s,u);else{u.aim=null;u.cooldown=1;}}
-      }else if(u.cooldown<=0&&distance<c.range&&!blocked(origin,p,R)){
+        if(u.windup<=0){if(!blocked(origin,u.aim,R)&&!friendlyLane(s,u,u.aim))fire(s,u);else{u.aim=null;u.cooldown=1;u.tactic='hold-friendly-lane';}}
+      }else if(u.cooldown<=0&&distance<c.range&&sees&&aiming<3){
         const lead=Math.min(.85,distance/c.speed+.15);
-        u.aim={x:p.x+p.vx*lead,y:p.y+p.vy*Math.min(.3,lead),z:p.z+p.vz*lead};u.windup=c.delay;
+        u.aim={x:p.x+p.vx*lead,y:p.y+p.vy*Math.min(.3,lead),z:p.z+p.vz*lead};u.windup=c.delay;aiming++;
       }
     }
     const alive=[];
@@ -150,7 +181,10 @@
   }
   function update(g,dt,R){
     if(!eligible(g)||g.state!=='playing'||!(dt>0))return;
+    const campaign=declined(g)?'hunt':'convoy';
+    if(g.assault&&g.assault.campaign&&g.assault.campaign!==campaign)g.assault=null;
     const s=g.assault||(g.assault={startedAt:g.elapsed,age:0,accumulator:0,units:[],shots:[],fx:[],waves:[],nextId:1,fired:0,lastKnown:{x:g.player.x,y:g.player.y,z:g.player.z}});
+    s.campaign=campaign;
     s.accumulator+=Math.min(dt,.25);
     while(s.accumulator>=TICK&&g.state==='playing'){s.accumulator-=TICK;tick(g,s,TICK,R);}
   }
@@ -246,6 +280,6 @@
     function dispose(){root.removeFromParent();for(const lamp of searchlights){scene.remove(lamp,lamp.target);lamp.dispose();}for(const mesh of partMeshes)mesh.dispose();effects.dispose();missiles.dispose();cube.dispose();sphere.dispose();actorSphere.dispose();wheelGeometry.dispose();for(const m of [dark,glass,rubber,red,armor,steel,blue,warm,effects.material,warnings.material,traces.material])m.dispose();warnings.geometry.dispose();traces.geometry.dispose();}
     return {root,update,reset,dispose,warmup};
   }
-  const api={update,warning,eligible,blocked,damage,runOver,createRenderer,MAX_UNITS,MAX_SHOTS};
+  const api={update,warning,eligible,blocked,damage,runOver,friendlyLane,createRenderer,MAX_UNITS,MAX_SHOTS};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.SpiderAssault=api;
 })(typeof window!=='undefined'?window:globalThis);
