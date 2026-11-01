@@ -2,10 +2,10 @@
 <html lang="ru"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#101916"><meta name="description" content="Ночь Охоты — история Объекта №7. Десять минут до рассвета, полёты над городом и выбор: бежать или открыть клетки."><title>Ночь Охоты — Открытые клетки</title>
-<link rel="stylesheet" href="ui.css"><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="site.css">
-<script defer src="vendor/three-city.js"></script><script defer src="vendor/three-global.js"></script><script defer src="physics.js"></script><script defer src="story.js"></script><script defer src="models.js"></script><script defer src="camera.js"></script><script defer src="web.js"></script><script defer src="game.js"></script>
+<link rel="stylesheet" href="ui.css?v=20261101-assault"><link rel="stylesheet" href="styles.css?v=20261101"><link rel="stylesheet" href="site.css">
+<script defer src="vendor/three-city.js"></script><script defer src="vendor/three-global.js"></script><script defer src="physics.js?v=20261101"></script><script defer src="story.js?v=20261101-assault"></script><script defer src="models.js?v=20261101"></script><script defer src="camera.js"></script><script defer src="web.js"></script><script defer src="locations.js?v=20261101-guards"></script><script defer src="prisoner-release.js"></script><script defer src="visuals.js?v=20261101"></script><script defer src="assault.js?v=20261101-guards"></script><script defer src="game.js?v=20261101-guards"></script>
 </head><body><main id="game" aria-label="Трёхмерная игра Паук против человека">
-<canvas id="viewport" aria-label="Город от первого лица"></canvas><div id="vignette"></div><div id="damage"></div>
+<div id="assault-status" role="status" hidden></div><canvas id="viewport" aria-label="Город от первого лица"></canvas><div id="vignette"></div><div id="damage"></div>
 <header class="hud"><div class="brand"><span class="brand-icon">✳</span><div>SPIDER <em>VS</em> MAN<small>ЭКСПЕРИМЕНТ №7</small></div></div><div class="clock"><span>ДО РАССВЕТА</span><strong id="timer">10:00</strong><div class="progress"><i id="progress"></i></div></div><div class="status"><span id="health" aria-label="Здоровье: 3 из 3">♥ ♥ ♥</span><button id="pause" aria-label="Пауза" disabled>Ⅱ</button></div></header>
 <button id="camera-mode" type="button" aria-label="Переключить камеру (F5)">F5 · От первого лица</button><div class="district">АРАХНА <span>/</span> СЕКТОР 07 · ПУТЬ К ШЛЮЗУ</div>
 <aside id="radio" role="status" aria-live="polite" hidden><strong id="radio-from">РАДИО / ДОКТОР ЛЕВИН</strong><p id="radio-text"></p></aside>

@@ -12,20 +12,45 @@
   }
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
   renderer.outputColorSpace = T.SRGBColorSpace;
-  renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.15;
+  renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = T.PCFSoftShadowMap;
+  renderer.shadowMap.autoUpdate = false;
   const NIGHT=0x101c30;
   const scene = new T.Scene(); scene.background = new T.Color(NIGHT);
   scene.fog = new T.Fog(NIGHT, 105, 350);
   const camera = new T.PerspectiveCamera(80, 1, .07, 580); camera.rotation.order = 'YXZ'; scene.add(camera);
-  scene.add(new T.HemisphereLight(0x9abbed, 0x303845, 1.25));
-  const sun = new T.DirectionalLight(0xabc9ff, 1.6); sun.position.set(-40, 90, 30); scene.add(sun);
-  const fill = new T.DirectionalLight(0xffba84,.45);fill.position.set(60,20,-40);scene.add(fill);
+  scene.add(new T.HemisphereLight(0xb6c4d8, 0x44413b, .85));
+  const sun = new T.DirectionalLight(0xc3d3ed, 1.35); sun.position.set(-80,140,60); scene.add(sun,sun.target);
+  // One bounded shadow map, not a light per window. Snap the light frame to
+  // shadow texels so translating the camera does not make static edges crawl.
+  sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);
+  Object.assign(sun.shadow.camera,{left:-96,right:96,top:96,bottom:-96,near:1,far:400});
+  sun.shadow.camera.updateProjectionMatrix();sun.shadow.bias=-.00015;sun.shadow.normalBias=.06;
+  const shadowDirection=new T.Vector3(-80,140,60),shadowRight=new T.Vector3(60,0,80).normalize();
+  const shadowUp=new T.Vector3().crossVectors(shadowDirection,shadowRight).normalize(),shadowFocus=new T.Vector3();
+  function updateSun(position){
+    shadowFocus.set(position.x,Math.max(0,position.y),position.z);
+    const texel=192/2048;
+    for(const axis of [shadowRight,shadowUp]){const value=shadowFocus.dot(axis);shadowFocus.addScaledVector(axis,Math.round(value/texel)*texel-value);}
+    sun.target.position.copy(shadowFocus);sun.position.copy(shadowFocus).add(shadowDirection);
+  }
+  const fill = new T.DirectionalLight(0xffd4a7,.22);fill.position.set(60,20,-40);scene.add(fill);
   const city=SpiderModels.city(scene, R);
+  const locations=GameLocations.create({THREE:T,scene,batchCity:true,blackoutChunkSize:R.BLOCK*4,locations:R.buildings.map(b=>({id:b.id,type:b.type,position:{x:b.x+b.w/2,y:0,z:b.z+b.d/2},width:b.w,depth:b.d,height:b.h}))});
+  R.installLocations(locations.colliders);
+  // Physics owns compact copies now; drop the duplicate min/max objects for
+  // hundreds of thousands of generated stair and furnishing colliders.
+  locations.colliders.length=0;
+  const visuals=GameVisuals.create(T,scene);
+  const A=window.SpiderAssault,assaultView=A.createRenderer(T,scene);
+  visuals.environment(renderer);
   // Static city transforms never need recomputing on every animation frame.
   scene.updateMatrixWorld(true);
   scene.traverse(o=>{if(o.isMesh&&!o.isSkinnedMesh)o.matrixAutoUpdate=false;});
-  const hunter = SpiderModels.hunter(), spider = SpiderModels.spider(scene), firstSpider = SpiderModels.spider(camera); scene.add(hunter.root);
-  firstSpider.root.position.set(0,-.64,-.18);
+  // One world-space body in both views. A camera-attached duplicate used to
+  // rotate its feet into the ground whenever the player looked down.
+  const hunter = SpiderModels.hunter(), spider = SpiderModels.spider(scene); scene.add(hunter.root);
   const C = window.SpiderCamera;
   let thirdPerson = false;
   function toggleCamera() {
@@ -85,7 +110,7 @@
   }
   function showMenu() {
     running = false; paused = false; ending = 0; clearInput(); releaseMouse();
-    game = R.createGame(); accumulator = 0;
+    game = R.createGame(); accumulator = 0;visuals.reset();
     scene.background.setHex(NIGHT); scene.fog.color.setHex(NIGHT);
     $('pause').disabled = true;
     $('panel-title').textContent = 'Ночь Охоты';
@@ -100,7 +125,7 @@
   $('choose-story').addEventListener('click', () => chooseMode('story'));
   $('back-menu').addEventListener('click', showMenu);
   function startSession() {
-    if (!paused || !running) { game = R.createGame(game.mode); yaw = 0; pitch = 0; ending = 0; scene.background.setHex(NIGHT); scene.fog.color.setHex(NIGHT); }
+    if (!paused || !running) { game = R.createGame(game.mode); visuals.reset(); yaw = 0; pitch = 0; ending = 0; scene.background.setHex(NIGHT); scene.fog.color.setHex(NIGHT); }
     running = true; paused = false; clearInput(); accumulator = 0; missUntil = 0;
     $('overlay').hidden = true; $('pause').disabled = false; $('pause').setAttribute('aria-label', 'Пауза');
     $('start').blur(); lockHint = true; // Capture only on a scene click, not while using menu/HUD buttons.
@@ -149,28 +174,37 @@
   document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
   function resize() { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); }
   window.addEventListener('resize', resize); resize();
-  let lastHud=-Infinity;
+  let lastHud=-Infinity,lastShadow=-Infinity;
+  const shadowPosition=new T.Vector3(Infinity,Infinity,Infinity);
+  // Mesh root is measured from the feet, not from the physics sphere centre.
+  function footContact(x,z){
+    const p=game.player,c=Math.cos(yaw),s=Math.sin(yaw),wx=p.x+c*x+s*z,wz=p.z-s*x+c*z;
+    let height=R.groundHeight(wx,wz);
+    for(const b of R.query(wx-.015,wz-.015,wx+.015,wz+.015))
+      if(!b.noClimb&&b.h<=p.y-p.r+.31&&wx>=b.x&&wx<=b.x+b.w&&wz>=b.z&&wz<=b.z+b.d)height=Math.max(height,b.h);
+    return Math.max(-.6,height-spider.root.position.y+.025);
+  }
   function render(now) {
     const p = game.player, h = game.hunter, active = running && !paused;
     yaw = R.slingYaw(game,yaw);
     const view=C.pose(p,yaw,pitch,thirdPerson,R.solids);
     camera.position.set(view.x,view.y,view.z); camera.rotation.set(pitch,yaw,0);
     spider.root.visible=thirdPerson && !ending && game.state!=='won';
-    firstSpider.root.visible=!thirdPerson && !ending && game.state!=='won';
-    spider.root.position.set(p.x,p.y-.12,p.z); spider.root.rotation.set(0,yaw,0);
+    spider.body.visible=thirdPerson;
+    spider.root.position.set(p.x,p.y-p.r+.32,p.z); spider.root.rotation.set(0,yaw,0);
     const touch=p.climbing ? R.wall(p) : null;
     if(touch){
       const normal=new T.Vector3(touch.nx,0,touch.nz),forward=new T.Vector3(0,1,0);
       const right=new T.Vector3().crossVectors(forward,normal);
       spider.root.quaternion.setFromRotationMatrix(new T.Matrix4().makeBasis(right,normal,forward.negate()));
-      spider.root.position.set(p.x-touch.nx*.28,p.y,p.z-touch.nz*.28);
+      spider.root.position.set(p.x-touch.nx*(p.r-.32),p.y,p.z-touch.nz*(p.r-.32));
     }
     hunter.root.position.set(h.x, h.y-h.r, h.z); hunter.root.rotation.set(h.mode==='withdrawal'?.45:0, Math.atan2(h.x-p.x, h.z-p.z), 0);
     if(h.mode==='withdrawal') hunter.root.position.y -= .35; // hunched, shaking from withdrawal
     hunter.animate(game.elapsed, active && Math.hypot(h.vx,h.vz,h.vy)>1, h.windup>0 ? 1.1-(1-h.windup/.65)*.45 : game.attack, h.climbing);
     hunter.root.scale.setScalar(h.windup>0 ? 1.12 : 1);
-    spider.animate(game.elapsed, active && Math.hypot(p.vx,p.vz,p.vy)>1, !!game.web||!!game.sling);
-    firstSpider.animate(game.elapsed, active && Math.hypot(p.vx,p.vz,p.vy)>1, !!game.web||!!game.sling);
+    const moving=active&&Math.hypot(p.vx,p.vz,p.vy)>1;
+    if(spider.root.visible)spider.animate(game.elapsed,moving,!!game.web||!!game.sling,p.grounded&&!p.climbing?footContact:null);
     const silkStart = thirdPerson ? new T.Vector3(p.x,p.y,p.z) : new T.Vector3(.23,-.2,-.35);
     if(!thirdPerson) camera.localToWorld(silkStart);
     const hit=game.webHit, hitAge=hit?game.elapsed-hit.at:Infinity;
@@ -208,6 +242,12 @@
     const threat=!free&&active&&R.hostile(game);
     $('danger').hidden = !threat || distance>17;
     $('danger').textContent = game.elapsed<(h.webUntil||0) ? `ОХОТНИК ОПУТАН · ${Math.ceil(h.webUntil-game.elapsed)} С` : h.lost ? 'ОХОТНИК ПОТЕРЯЛ СЛЕД' : h.windup>0 ? 'ОН ПРЫГАЕТ — УКЛОНЯЙСЯ!' : 'ОХОТНИК РЯДОМ';
+    const assault=A.warning(game);
+    $('assault-status').hidden=!assault||!active;
+    if(assault){
+      $('assault-status').textContent=`АРАХНА · ${assault.count} ПРОТИВНИКОВ · ${R.blind(game)?'СВЯЗЬ ПОДАВЛЕНА ЩИТКОМ':'ПОЛНАЯ МОБИЛИЗАЦИЯ'}`;
+      if((assault.fire||assault.hit||assault.car)&&active){$('danger').hidden=false;$('danger').textContent=assault.text;}
+    }
     const message = free ? null : S.radioAt(game.elapsed, story);
     $('radio').hidden = !message || paused || (!running && !ending);
     $('radio-from').textContent = 'РАДИО / ' + (message&&message.from ? message.from : 'ДОКТОР ЛЕВИН');
@@ -228,25 +268,47 @@
     $('hint').textContent = now<slingMissUntil ? 'Наведи точно на другую стену: рогатке нужны два разных здания.' : now<missUntil ? `Нет здания под прицелом в пределах ${R.RANGE} м.` : sl ? !sl.b ? 'Первая нить закреплена · наведи на другое здание и нажми ЛКМ / Q' : `Рогатка: натяжение ${charge}% · прицел ±45° от центра нитей · ЛКМ / Q или Пробел — выстрел` : goal&&goal.kind==='rescue' ? 'Вернись к маяку лаборатории · удерживай E у терминала 5 с · до рассвета' : goal&&goal.kind==='help'&&distance<3.6 ? 'Держи E — ввести антидот Шестому' : game.web ? 'Держи ПКМ — авто-качели · WASD — рули дугой · отпусти ПКМ или Пробел — подброс и полёт' : lockHint ? 'Нажми на сцену для обзора мышью; запасной обзор — зажми ЛКМ и двигай мышь' : p.climbing ? 'На стене · W / S — вверх / вниз · Пробел — оттолкнуться' : game.elapsed<(h.webUntil||0) ? `Охотник опутан: ещё ${Math.ceil(h.webUntil-game.elapsed)} с · ПКМ — паутина` : 'ПКМ — зацеп / замедлить Охотника на 5 с · ЛКМ дважды по стенам — рогатка';
     }
     if (ending) {
-      const t=Math.min(1,(now-ending)/6000), allies=endingId==='truth'||endingId==='allies';
+      const t=Math.min(1,(now-ending)/(endingId==='cells'?18000:6000)), allies=endingId==='truth'||endingId==='allies';
       camera.position.set(0,-150,5-t*24);camera.rotation.set(0,0,0);
+      if(endingId==='cells'){visuals.shot(camera,renderDelta);hunter.root.visible=false;}
       gate.position.y=Math.min(7,t*22);
       // Helped Object No. 6 walks into the tunnel ahead; otherwise he stays outside the gate.
       if(allies){hunter.root.position.set(1.3,-152.7,1-t*24);hunter.root.rotation.set(0,0,0);}
       else{hunter.root.position.set(0,-152.7,7);hunter.root.rotation.set(0,Math.PI,0);}
-      $('hint').textContent=allies?'ШЛЮЗ ОТКРЫТ · СЕДЬМОЙ И ШЕСТОЙ УХОДЯТ В ТОННЕЛЬ':'ШЛЮЗ ОТКРЫТ · ОБЪЕКТ №7 УХОДИТ В ТОННЕЛЬ';
+      $('hint').textContent=endingId==='cells'?'ЗАМКИ ОТКРЫТЫ · ПОДОПЫТНЫЕ ВЫХОДЯТ ИЗ СЛУЖЕБНОГО ХОДА':allies?'ШЛЮЗ ОТКРЫТ · СЕДЬМОЙ И ШЕСТОЙ УХОДЯТ В ТОННЕЛЬ':'ШЛЮЗ ОТКРЫТ · ОБЪЕКТ №7 УХОДИТ В ТОННЕЛЬ';
       $('crosshair').hidden=true; $('objective').hidden=true;
       if(t>=1){ending=0;const e=S.ENDINGS[endingId],st=S.state(game);panel(e.title,`${e.text} Улики: ${st.drives}/2 · Шестой: ${st.helped?'спасён':'остался Охотником'}.`,'Сыграть Ночь Охоты снова');}
     } else {
       $('crosshair').hidden=game.state==='won';
-      if(game.state==='won'){camera.position.set(0,-150,-19);camera.rotation.set(0,0,0);}
+      if(game.state==='won'){if(endingId==='cells')visuals.shot(camera,0);else{camera.position.set(0,-150,-19);camera.rotation.set(0,0,0);}}
     }
     city.update(camera);
+    locations.update(renderDelta,game.elapsed,camera,dark>0?bo:null,dark);
+    assaultView.update(game);
+    if(lastShadow===-Infinity || now-lastShadow>=33&&(camera.position.distanceToSquared(shadowPosition)>.25 || (active||ending)&&now-lastShadow>=100)){
+      updateSun(camera.position);shadowPosition.copy(camera.position);lastShadow=now;renderer.shadowMap.needsUpdate=true;
+    }
     renderer.render(scene,camera);
   }
-  let lastView='';
+  visuals.finish();
+  assaultView.warmup(renderer,camera);
+  let lastView='',renderDelta=0,qualityFrames=0,qualityTime=0,qualityCooldown=0;
+  const maxPixelRatio=Math.min(devicePixelRatio,1.5);
   function frame(now) {
     const dt = Math.min(.1,(now-(last||now))/1000); last = now;
+    renderDelta=dt;
+    // Slow hysteresis avoids resolution pumping. Never change game geometry,
+    // collision fidelity or input/physics timing to compensate for a slow GPU.
+    if(running&&!paused&&!document.hidden&&now>qualityCooldown&&dt>0&&dt<.1){
+      qualityTime+=dt;qualityFrames++;
+      if(qualityFrames>=90){
+        const average=qualityTime/qualityFrames,current=renderer.getPixelRatio();let next=current;
+        if(average>.022)next=Math.max(Math.min(.75,maxPixelRatio),current-.125);
+        else if(average<.017)next=Math.min(maxPixelRatio,current+.125);
+        if(next!==current){renderer.setPixelRatio(next);qualityCooldown=now+3000;}
+        qualityFrames=0;qualityTime=0;
+      }
+    }
     if (running && !paused) {
       accumulator += dt;
       while (accumulator >= 1/120) {
@@ -254,17 +316,18 @@
         if(jump&&game.sling&&game.sling.b){R.releaseSling(game,aimDirection());input.jump=false;}
         R.step(game, input, 1/120);
         if (game.mode === 'story') S.update(game, input, 1/120); else game.events = [];
+        A.update(game,1/120,R);
+        if(game.mode==='story')visuals.prepare(game,R);
         jump = false; accumulator -= 1/120;
         if (game.state !== 'playing') {
           running = false; clearInput(); releaseMouse(); $('pause').disabled = true;
           if(game.state==='won'){
             endingId=S.ending(game);
             if(endingId==='cells'){
-              const st=S.state(game);
-              panel('Открытые клетки',`${S.ENDINGS.cells.text} ${st.helped?'Шестой вывел последнюю группу и ушёл вместе с вами.':'Судьба Шестого осталась неизвестной.'} Улики: ${st.drives} из 2.`, 'Начать новую ночь');
-              $('overlay').querySelector('.panel').classList.add('finale');
+              ending=now;visuals.start(game,R);
+              $('overlay').hidden=true;
             }else{ending=now;scene.background.setHex(0x101d24);scene.fog.color.setHex(0x101d24);}
-          }else panel('СИГНАЛ ОБЪЕКТА №7 ПОТЕРЯН',`Электробита лишила тебя сознания. Охотник вернул Объект №7 в «Арахну». До поимки: ${Math.floor(game.elapsed/60)} мин ${Math.floor(game.elapsed%60)} сек. Попробуй снова — Левин ещё на связи.`,'Повторить побег');
+          }else panel('СИГНАЛ ОБЪЕКТА №7 ПОТЕРЯН',`${game.defeatCause==='assault'?(game.lastHit?.cause==='runover'?'Бронемашина «Арахны» сбила тебя и сорвала побег.':'Отряды «Арахны» накрыли тебя огнём и сорвали побег.'):'Электробита лишила тебя сознания. Охотник вернул Объект №7 в «Арахну».'} До поимки: ${Math.floor(game.elapsed/60)} мин ${Math.floor(game.elapsed%60)} сек. Попробуй снова — Левин ещё на связи.`,'Повторить побег');
           break;
         }
       }
