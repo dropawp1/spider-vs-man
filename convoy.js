@@ -39,9 +39,10 @@
     const c=g.convoy;if(!c||!['moving','stopped'].includes(c.status))return null;
     return {kind:'convoy',label:c.status==='stopped'?'КОНВОЙ №0 · ДЕРЖИ E У ЗАДНИХ ДВЕРЕЙ':`КОНВОЙ №0 · ПКМ ПО ТРАНСПОРТУ ${c.hits}/3`,x:c.x-(c.status==='stopped'?c.direction*3.8:0),y:1.6,z:c.z,left:Math.max(0,Math.ceil((c.status==='stopped'?Math.min(c.until,c.stoppedUntil):c.until)-g.elapsed)),progress:c.status==='stopped'?Math.min(1,c.hold/2):c.hits/3};
   }
-  function createRenderer(T,scene){
+  function createRenderer(T,scene,options={}){
     const root=new T.Group();root.name='convoy-zero';scene.add(root);
     const steel=new T.MeshStandardMaterial({color:0x697e7b,roughness:.55,metalness:.25}),rubber=new T.MeshStandardMaterial({color:0x10151a,roughness:.95}),glass=new T.MeshStandardMaterial({color:0x618c99,roughness:.16,metalness:.5}),glow=new T.MeshBasicMaterial({color:0xffcb78}),silk=new T.MeshStandardMaterial({color:0xd8e6e1,roughness:.45});
+    if(options.medical){steel.color.setHex(0xa4b8b1);glow.color.setHex(0x72e5c3);root.name='medical-courier';}
     const geo=new T.BoxGeometry(1,1,1),wheelGeo=new T.CylinderGeometry(.55,.55,.38,16),wheels=[],doors=[];
     function box(parent,x,y,z,w,h,d,m){const o=new T.Mesh(geo,m);o.position.set(x,y,z);o.scale.set(w,h,d);o.castShadow=o.receiveShadow=true;parent.add(o);return o;}
     box(root,0,.85,0,2.8,1,7,steel);box(root,0,2.05,1,2.7,2,4.7,steel);box(root,0,1.9,-2.2,2.6,1.65,2,steel);box(root,0,2.2,-3.22,2.25,.8,.03,glass);
@@ -58,8 +59,9 @@
     // An actual zero emblem, not a remote font or texture.
     for(const x of [-.32,.32])box(root,x,2.1,-3.25,.12,.65,.035,glow);
     for(const y of [1.8,2.4])box(root,0,y,-3.25,.65,.12,.035,glow);
+    if(options.medical){box(root,0,2.1,-3.3,.12,.65,.04,glow);box(root,0,2.1,-3.3,.65,.12,.04,glow);}
     const bindings=[];for(let i=0;i<3;i++){const b=box(root,0,1.9,-.5+i*1.3,2.85,.09,.11,silk);bindings.push(b);}
-    const crowd=typeof window!=='undefined'&&window.PrisonerRelease?window.PrisonerRelease.create({THREE:T,scene}):null;
+    const crowd=!options.medical&&typeof window!=='undefined'&&window.PrisonerRelease?window.PrisonerRelease.create({THREE:T,scene}):null;
     let active=null,released=false,lastTime=0;
     function update(g){const c=g.convoy;
       if(active!==c){active=c;released=false;lastTime=g.elapsed;if(crowd)crowd.reset();}

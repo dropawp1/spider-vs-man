@@ -3,3 +3,18 @@
 .mode-picker{display:grid;gap:12px;margin:22px 0}.mode-card{text-align:left;padding:18px;border:1px solid #71dbc655;border-radius:10px;background:#163541;color:#e4f6f2;transition:background .15s,border-color .15s}.mode-card:hover{background:#20505b;border-color:#83f4db}.mode-card strong{display:flex;justify-content:space-between;font-size:16px}.mode-card small{display:block;margin-top:9px;line-height:1.6;color:#a9c7ce;font-size:12px}.secondary{width:100%;margin-top:12px;padding:12px;background:transparent;border:1px solid #71929b66;border-radius:7px;color:#c1d9dc}.secondary:hover{background:#ffffff0c}.panel.menu .instructions{display:none}.panel.menu{width:560px}.hud .clock.free strong{font-size:24px;letter-spacing:1px}@media(max-width:760px){.hud .clock.free strong{font-size:16px}.mode-card{padding:14px}.controls{gap:8px;font-size:10px}}
 #assault-status{position:absolute;z-index:4;right:28px;top:157px;max-width:min(420px,85vw);padding:9px 12px;border:1px solid #aa4638;background:#191c20dd;color:#ffc7a8;font:600 10px/1.5 monospace;letter-spacing:.06em;pointer-events:none}
 #assault-status[hidden]{display:none}
+#scene-caption{position:absolute;z-index:4;left:50%;bottom:9%;transform:translateX(-50%);width:min(760px,88vw);padding:18px 24px;background:#081a23ed;border-left:3px solid #c4dfb5;text-align:center;pointer-events:none}#scene-caption strong{font:11px monospace;letter-spacing:2px;color:#c4dfb5}#scene-caption p{font-size:clamp(14px,2vw,19px);line-height:1.6;margin:10px 0;color:#f0f5eb}#scene-caption small{font:10px monospace;color:#9bb2aa}.story-scene #radio,.story-scene #hint,.story-scene #telemetry,.story-scene #objective,.story-scene #danger,.story-scene #assault-status,.story-scene #crosshair,.story-scene .controls,.story-scene #camera-mode,.story-scene .district{display:none!important}
+
+/* Tactical radar owns the upper-left corner; radio never covers its tracker. */
+#radar-panel{position:absolute;z-index:4;left:20px;top:18px;width:208px;pointer-events:none;color:#d8eae4;font:10px monospace}
+#radar{display:block;width:100%;height:auto;border-radius:50%;border:1px solid #a8d6c553;background:#14232be8;box-shadow:0 8px 28px #0007}
+.radar-caption{display:flex;justify-content:space-between;margin:8px 5px;color:#9db6af;font:9px monospace;letter-spacing:1px}
+#six-tracker{--six-color:#ff9b74;display:grid;grid-template-columns:30px 1fr auto;gap:5px 7px;align-items:center;padding:10px 9px;background:#0b1c25ed;border-left:3px solid var(--six-color);border-radius:4px;color:var(--six-color)}
+.six-arrow{grid-row:1 / 3;display:block;font:28px/30px Arial;text-align:center;transform-origin:center}.six-name{font:700 11px monospace;letter-spacing:1px}.six-distance{font:700 12px monospace}.six-state{grid-column:2 / 4;font:9px monospace;color:#c0cfc7;letter-spacing:.3px}
+#game:has(#radar-panel:not([hidden])) .brand{display:none}
+#game:has(#radar-panel:not([hidden])) .clock{position:absolute;left:50%;transform:translateX(-50%)}
+#game:has(#radar-panel:not([hidden])) .status{margin-left:auto}
+#game:has(#radar-panel:not([hidden])) .district{left:254px;top:34px;max-width:190px;line-height:1.7}
+#game:has(#radar-panel:not([hidden])) #radio{top:326px;left:20px;max-width:330px}
+@media(max-width:760px){#radar-panel{left:12px;top:12px;width:156px}.radar-caption{font-size:8px}.six-name{font-size:10px}.six-state{font-size:8px}#six-tracker{padding:7px 6px;gap:3px}#game:has(#radar-panel:not([hidden])) .district{display:none}#game:has(#radar-panel:not([hidden])) #radio{top:270px;left:12px;max-width:280px}}
+@media(max-height:650px) and (min-width:761px){#radar-panel{width:164px}#game:has(#radar-panel:not([hidden])) #radio{left:206px;top:112px;max-width:300px}}

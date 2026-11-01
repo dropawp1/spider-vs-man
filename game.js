@@ -45,6 +45,7 @@
   const visuals=GameVisuals.create(T,scene);
   const A=window.SpiderAssault,assaultView=A.createRenderer(T,scene);
   const convoyView=window.SpiderConvoy.createRenderer(T,scene);
+  const O=window.SpiderOpening,openingView=O.createRenderer(T,scene,window.SpiderConvoy);
   visuals.environment(renderer);
   // Static city transforms never need recomputing on every animation frame.
   scene.updateMatrixWorld(true);
@@ -127,7 +128,7 @@
   $('choose-story').addEventListener('click', () => chooseMode('story'));
   $('back-menu').addEventListener('click', showMenu);
   function startSession() {
-    if (!paused || !running) { game = R.createGame(game.mode); visuals.reset(); yaw = 0; pitch = 0; ending = 0; scene.background.setHex(NIGHT); scene.fog.color.setHex(NIGHT); }
+    if (!paused || !running) { game = R.createGame(game.mode); visuals.reset(); yaw = 0; pitch = 0; ending = 0; scene.background.setHex(NIGHT); scene.fog.color.setHex(NIGHT); O.start(game,R); }
     running = true; paused = false; clearInput(); accumulator = 0; missUntil = 0;
     $('overlay').hidden = true; $('pause').disabled = false; $('pause').setAttribute('aria-label', 'Пауза');
     $('start').blur(); lockHint = true; // Capture only on a scene click, not while using menu/HUD buttons.
@@ -143,14 +144,15 @@
   window.addEventListener('keydown', e => {
     if (e.code === 'F5') { e.preventDefault(); if (!e.repeat) toggleCamera(); return; }
     if (e.code === 'Escape') { pause(); return; }
-    if(e.code==='KeyX'&&running&&!paused&&!e.repeat){game.trackConvoy=game.trackConvoy===false;return;}
+    if(O.active(game)&&running&&!paused){if(e.code==='Enter'&&!e.repeat){O.finish(game,R);clearInput();}return;}
+    if(e.code==='KeyX'&&running&&!paused&&!e.repeat){if(game.courier&&['moving','stopped'].includes(game.courier.status))game.trackCourier=game.trackCourier===false;else game.trackConvoy=game.trackConvoy===false;return;}
     if (!codes.includes(e.code) || !running || paused) return;
     e.preventDefault(); keys.add(e.code); if (e.code === 'Space' && !e.repeat) jump = true;
     if (e.code === 'KeyQ' && !e.repeat) trySling();
   });
   window.addEventListener('keyup', e => { keys.delete(e.code); });
   window.addEventListener('mousemove', e => {
-    if (!running || paused) return;
+    if (!running || paused || O.active(game)) return;
     if (document.pointerLockElement === $('viewport') || (e.target === $('viewport') && e.buttons === 1)) {
       const look = C.look(yaw,pitch,e.movementX,e.movementY);
       yaw = R.slingYaw(game,look.yaw); pitch = look.pitch;
@@ -163,11 +165,12 @@
     const view=C.pose(game.player,yaw,pitch,true,R.solids),h=game.hunter;
     const targets=R.rayCandidates(view,d,R.RANGE);
     const convoy=game.convoy;if(convoy&&['moving','stopped'].includes(convoy.status))targets.push({x:convoy.x-3.55,z:convoy.z-1.55,w:7.1,d:3.1,y0:0,h:3.1});
+    const courier=game.courier;if(courier&&['moving','stopped'].includes(courier.status))targets.push({x:courier.x-3.55,z:courier.z-1.55,w:7.1,d:3.1,y0:0,h:3.1});
     if(game.mode==='story')targets.push({x:h.x-.65,z:h.z-.65,w:1.3,d:1.3,y0:h.y-h.r,h:h.y-h.r+3.2});
     return C.aim(game.player,view,d,targets,R.RANGE);
   }
   $('viewport').addEventListener('pointerdown', e => {
-    if (!running || paused) return;
+    if (!running || paused || O.active(game)) return;
     // LMB: first click captures the mouse; once captured it pulls the slingshot.
     if (e.button === 0) { if (document.pointerLockElement !== $('viewport')) captureMouse(); else trySling(); }
     if (e.button === 2) { e.preventDefault(); if (!R.shootWeb(game, aimDirection())) missUntil = performance.now() + 1200; }
@@ -193,7 +196,7 @@
     yaw = R.slingYaw(game,yaw);
     const view=C.pose(p,yaw,pitch,thirdPerson,R.solids);
     camera.position.set(view.x,view.y,view.z); camera.rotation.set(pitch,yaw,0);
-    spider.root.visible=thirdPerson && !ending && game.state!=='won';
+    spider.root.visible=thirdPerson && !ending && game.state!=='won' && !O.active(game);
     spider.body.visible=thirdPerson;
     spider.root.position.set(p.x,p.y-p.r+.32,p.z); spider.root.rotation.set(0,yaw,0);
     const touch=p.climbing ? R.wall(p) : null;
@@ -223,8 +226,11 @@
     const blackKey=dark>0?bo.id+':'+dark.toFixed(2):'';
     if(blackKey!==lastBlack){city.blackout(dark>0?bo:null,dark);lastBlack=blackKey;}
     const goal=game.mode==='story'&&running?S.objective(game):null;
-    radar.update(game,yaw,now,running&&!ending&&game.state==='playing',goal);
-    beacon.visible=!!goal&&(goal.kind==='drive'||goal.kind==='rescue'||goal.kind==='convoy')&&!ending&&game.state!=='won';
+    radar.update(game,yaw,now,running&&!ending&&game.state==='playing'&&!O.active(game),goal);
+    const sceneCaption=O.caption(game);$('game').classList.toggle('story-scene',!!sceneCaption);
+    $('scene-caption').hidden=!sceneCaption||!running;
+    if(sceneCaption){$('scene-speaker').textContent=sceneCaption[1];$('scene-line').textContent=sceneCaption[2];}
+    beacon.visible=!!goal&&['drive','rescue','convoy','passage','courier'].includes(goal.kind)&&!ending&&game.state!=='won'&&!O.active(game);
     if(beacon.visible){beacon.position.set(goal.x,goal.y,goal.z);beaconCore.rotation.y=now/400;beaconCore.position.y=Math.sin(now/300)*.15;}
     if(now-lastHud>=50 || !active){
     lastHud=now;
@@ -240,6 +246,7 @@
     $('evidence').hidden=free; $('evidence-count').textContent=story?story.drives:0;
     $('hunter-label').textContent=h.mode==='ally'?'ШЕСТОЙ':'ОХОТНИК';
     $('timer').textContent = free ? 'СВОБОДА' : `${String(Math.floor(left/60)).padStart(2,'0')}:${String(left%60).padStart(2,'0')}`;
+    if(O.active(game)){$('timer').textContent=game.opening.kind==='intro'?'ПРОЛОГ':'ПРОХОД';clock.querySelector('span').textContent='ШЕСТОЙ И СЕДЬМОЙ';}
     $('progress').style.width = `${game.elapsed/R.DURATION*100}%`;
     $('health').textContent = '♥ '.repeat(game.hp)+'♡ '.repeat(3-game.hp);
     $('health').setAttribute('aria-label', `Здоровье: ${game.hp} из 3`);
@@ -291,6 +298,7 @@
     locations.update(renderDelta,game.elapsed,camera,dark>0?bo:null,dark);
     assaultView.update(game);
     convoyView.update(game);visuals.updateSky(camera);
+    openingView.update(game,camera,hunter);
     if(lastShadow===-Infinity || now-lastShadow>=33&&(camera.position.distanceToSquared(shadowPosition)>.25 || (active||ending)&&now-lastShadow>=100)){
       updateSun(camera.position);shadowPosition.copy(camera.position);lastShadow=now;renderer.shadowMap.needsUpdate=true;
     }
@@ -320,9 +328,10 @@
       while (accumulator >= 1/120) {
         const input = {yaw,forward:keys.has('KeyW')||keys.has('ArrowUp'),back:keys.has('KeyS')||keys.has('ArrowDown'),left:keys.has('KeyA')||keys.has('ArrowLeft'),right:keys.has('KeyD')||keys.has('ArrowRight'),jump,interact:keys.has('KeyE')};
         if(jump&&game.sling&&game.sling.b){R.releaseSling(game,aimDirection());input.jump=false;}
-        R.step(game, input, 1/120);
+        if(O.active(game))O.step(game,1/120,R);
+        else{R.step(game, input, 1/120);
         if (game.mode === 'story') S.update(game, input, 1/120); else game.events = [];
-        A.update(game,1/120,R);
+        A.update(game,1/120,R);}
         if(game.mode==='story')visuals.prepare(game,R);
         jump = false; accumulator -= 1/120;
         if (game.state !== 'playing') {

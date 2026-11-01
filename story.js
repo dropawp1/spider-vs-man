@@ -4,6 +4,7 @@
   'use strict';
   const R=typeof module!=='undefined'&&module.exports?require('./physics.js'):root.SpiderRules;
   const C=typeof module!=='undefined'&&module.exports?require('./convoy.js'):root.SpiderConvoy;
+  const O=typeof module!=='undefined'&&module.exports?require('./opening.js'):root.SpiderOpening;
   const title='НОЧЬ ОХОТЫ';
   const intro='Ты — Объект №7, паук-мутант из лаборатории «Арахна». За тобой выпустили Охотника. До рассвета 10 минут: продержись, собери улики и реши, кем на самом деле был твой преследователь.';
   const LEVIN='ДОКТОР ЛЕВИН',HUNTER='ОХОТНИК',ARACHNA='«АРАХНА» / ПЕРЕХВАТ';
@@ -52,6 +53,8 @@
   function update(g,input={},dt=1/120){
     if(g.mode!=='story'||g.state!=='playing')return;
     const s=state(g),t=g.elapsed,p=g.player,h=g.hunter;
+    O.update(g,input,dt,R);
+    if(O.active(g))return;
     C.update(g,input,dt,R);
     const convoy=g.convoy;
     if(convoy&&!convoy.announced){convoy.announced=true;say(g,LEVIN,'Конвой №0 везёт шестерых подопытных. Жёлтый маяк ведёт к транспорту: три точных попадания ПКМ остановят его на 14 секунд. Подойди сзади и держи E две секунды. Флешка ждать не будет.',18);}
@@ -69,6 +72,7 @@
       if(Math.hypot(p.x-o.x,p.y-o.y,p.z-o.z)<PICKUP){
         s.drives++;s.objective=null;
         say(g,LEVIN,s.drives>=2?'Обе флешки у тебя! Этого хватит, чтобы утопить «Арахну».':'Есть первая флешка. Держи её крепче, Седьмой.',8);
+        if(o.index===0){s.confessionAt=t+9;s.radio={from:'ФЛЕШКА / АРХИВНАЯ ЗАПИСЬ',text:'«Левин, протокол шесть. Увеличение дозировки подавляет сопротивление Объекта №6. Продолжить испытания». Ты узнаёшь голос человека, который ведёт тебя к выходу.',at:t,duration:9};}
       }else if(t>=o.until){s.objective=null;say(g,LEVIN,'Маяк погас — курьер «Арахны» забрал флешку. Ничего, главное выжить.',8);}
     }
     if(t>=CHOICE_AT&&!s.fired.choice){
@@ -100,11 +104,13 @@
         say(g,LEVIN,s.helped?'Замки открыты! Шестой прикроет служебный ход. Выводи остальных, я отключаю охрану. Сегодня никто не останется в клетке.':'Замки открыты! Я отключаю охрану и веду подопытных к служебному ходу. Держись до рассвета — вы уйдёте вместе.',18);
       }
     }
+    if(s.confessionAt!==undefined&&!s.confessionDone&&t>=s.confessionAt&&(!s.radio||t>=s.radio.at+s.radio.duration)){s.confessionDone=true;s.radio={from:LEVIN,text:'Да. На записи мой голос. Я разрабатывал дозировку для Шестого и убеждал себя, что это лечение. Я виноват. Вы имеете право мне не верить. Передам тебе журналы и открою шлюз — без условий.',at:t,duration:17};}
   }
   function ending(g){const s=state(g);return s.freed?'cells':s.drives>=2&&s.helped?'truth':s.drives>=2?'expose':s.helped?'allies':'escape';}
   // HUD: текущая цель сюжета, null если цели нет.
   function objective(g){
     const s=state(g),t=g.elapsed;
+    const early=O.objective(g);if(early)return early;
     if(s.rescue&&!s.freed)return {kind:'rescue',label:'ОТКРЫТЫЕ КЛЕТКИ · ДЕРЖИ E '+(s.convoyRescued?'3':'5')+' С У ТЕРМИНАЛА',x:s.rescue.x,y:s.rescue.y,z:s.rescue.z,left:Math.max(0,Math.ceil(R.DURATION-t)),progress:Math.min(1,s.rescue.hold/(s.convoyRescued?3:RESCUE_TIME))};
     const convoyGoal=C.objective(g);if(convoyGoal&&(!s.objective||g.trackConvoy!==false)){if(s.objective)convoyGoal.label+=' · X: ФЛЕШКА';return convoyGoal;}
     if(s.objective&&s.objective.type==='drive')return {kind:'drive',label:s.objective.name,x:s.objective.x,y:s.objective.y,z:s.objective.z,left:Math.max(0,Math.ceil(s.objective.until-t))};

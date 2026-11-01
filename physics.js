@@ -250,7 +250,8 @@
     const caught=hunterAim(g,d),hit=aim(g,d),p=g.player;
     cancelSling(g);
     // Exact aimed hit on the optional transport; facades and Sixth occlude it.
-    const c=g.convoy,n=Math.hypot(d.x,d.y,d.z);
+    const n=Math.hypot(d.x,d.y,d.z);
+    for(const c of [g.convoy,g.courier]){
     if(c&&['moving','stopped'].includes(c.status)&&n>0){
       const f={x:d.x/n,y:d.y/n,z:d.z/n};
       const t=rayBox(p,f,{x:c.x-3.55,z:c.z-1.55,w:7.1,d:3.1,y0:0,h:3.1},RANGE);
@@ -261,6 +262,7 @@
         g.webHit={x:p.x+f.x*t,y:p.y+f.y*t,z:p.z+f.z*t,sx:-f.x,sy:-f.y,sz:-f.z,at:g.elapsed,shot:(g.shots=(g.shots||0)+1)};
         return true;
       }
+    }
     }
     if(caught){
       if(g.web)cutWeb(g,'release');
@@ -491,13 +493,13 @@
     const speed=mode==='ally'?(real>9?7.5:0):lost?3.2:5.8+1.4*k+(h.dosed?1.2:0);
     if(mode==='ally'){h.lunge=0;h.windup=0;h.windupStarted=false;h.vx=dist>.5?dx/dist*speed:0;h.vz=dist>.5?dz/dist*speed:0;}
     else if(h.lunge>0){
-      h.lunge-=dt;h.vx=h.dx*(speed+7);h.vz=h.dz*(speed+7);
+      h.lunge-=dt;const burst=h.supplyCut&&g.elapsed<420?3:7;h.vx=h.dx*(speed+burst);h.vz=h.dz*(speed+burst);
     }else if(h.windupStarted&&h.windup<=0){
       h.windupStarted=false;h.lunge=.4;const a=h.attackAim||{x:tx,z:tz},ax=a.x-h.x,az=a.z-h.z,n=Math.hypot(ax,az)||1;h.dx=ax/n;h.dz=az/n;
     }else if(h.windup>0){h.vx=h.vz=0;}
     else{
       h.vx=dist>.5?dx/dist*speed:0;h.vz=dist>.5?dz/dist*speed:0;
-      if(!lost&&h.sees&&h.grounded&&!h.cd&&real<10&&real>3&&Math.abs(p.y-h.y)<3){h.attackAim={x:tx,z:tz};h.windup=.65;h.windupStarted=true;h.cd=5.5-k;}
+      if(!lost&&h.sees&&h.grounded&&!h.cd&&real<10&&real>3&&Math.abs(p.y-h.y)<3){h.attackAim={x:tx,z:tz};h.windup=.65;h.windupStarted=true;h.cd=5.5-k+(h.supplyCut&&g.elapsed<420?3:0);}
       else if(!lost&&h.grounded&&p.y>h.y+3&&real<12&&!wall(h)){h.vy=13;}
     }
     if(!h.lunge&&!h.windup&&Math.abs(goal.y-h.y)<3){
@@ -512,6 +514,6 @@
     if(slowed&&!h.climbing&&h.vy>0)h.vy=Math.min(h.vy,4);
     move(h,dt);
   }
-  const api={navigate,installLocations,groundHeight,publicBuildings,GRID,BLOCK,WORLD,DURATION,RANGE,MAX_SPEED,BLACKOUT,SLING_CHARGE,SLING_MIN,SLING_MAX,solids,assistAim,hunterAim,releaseWeb,startSling,slingYaw,releaseSling,cancelSling,cutPanel,blind,hostile,query,rayCandidates,webBlocked,buildings,createGame,wall,move,aim,shootWeb,rayBox,step};
+  const api={cutWeb,navigate,installLocations,groundHeight,publicBuildings,GRID,BLOCK,WORLD,DURATION,RANGE,MAX_SPEED,BLACKOUT,SLING_CHARGE,SLING_MIN,SLING_MAX,solids,assistAim,hunterAim,releaseWeb,startSling,slingYaw,releaseSling,cancelSling,cutPanel,blind,hostile,query,rayCandidates,webBlocked,buildings,createGame,wall,move,aim,shootWeb,rayBox,step};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.SpiderRules=api;
 })(typeof window!=='undefined'?window:globalThis);
