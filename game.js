@@ -209,7 +209,7 @@
     hunter.root.position.set(h.x, h.y-h.r, h.z); hunter.root.rotation.set(h.mode==='withdrawal'?.45:0, Math.atan2(h.x-p.x, h.z-p.z), 0);
     if(h.mode==='withdrawal') hunter.root.position.y -= .35; // hunched, shaking from withdrawal
     hunter.animate(game.elapsed, active && Math.hypot(h.vx,h.vz,h.vy)>1, h.windup>0 ? 1.1-(1-h.windup/.65)*.45 : game.attack, h.climbing);
-    hunter.root.scale.setScalar(h.windup>0 ? 1.12 : 1);
+    hunter.root.scale.setScalar(1);
     const moving=active&&Math.hypot(p.vx,p.vz,p.vy)>1;
     if(spider.root.visible)spider.animate(game.elapsed,moving,!!game.web||!!game.sling,p.grounded&&!p.climbing?footContact:null);
     const silkStart = thirdPerson ? new T.Vector3(p.x,p.y,p.z) : new T.Vector3(.23,-.2,-.35);

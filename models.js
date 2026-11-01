@@ -44,7 +44,7 @@
     const cone=new T.ConeGeometry(1,1,4),pole=new T.CylinderGeometry(.07,.1,1,7);
     const panelLamp=mat(0xff5a4a,{emissive:0xff2a1a,emissiveIntensity:2.2});
     const lit=mat(0xd9bd84,{emissive:0xffd28c,emissiveIntensity:.38,roughness:.36}),warmSoft=mat(0xb6a17a,{emissive:0xf5cc90,emissiveIntensity:.22,roughness:.42}),warmBright=mat(0xe7cd96,{emissive:0xffda99,emissiveIntensity:.52,roughness:.32});
-    const off=mat(0x242b31,{roughness:.24,metalness:.25}),windowFrame=mat(0x625c51,{roughness:.52,metalness:.42}),white=mat(0xb3bbaf),road=mat(0x454a4c,{roughness:.62,metalness:.06}),sidewalk=mat(0x66635c),green=mat(0x365e52);
+    const off=mat(0x242b31,{roughness:.24,metalness:.25}),windowFrame=mat(0x625c51,{roughness:.52,metalness:.42}),white=mat(0xb3bbaf),road=mat(0x373e41,{roughness:.82,metalness:0}),sidewalk=mat(0x66635c),green=mat(0x365e52);
     road.userData.surfaceWet=1;sidewalk.userData.surfaceStyle=3;
     const windowPane=new T.PlaneGeometry(1,1);
     const wheelShape=new T.SphereGeometry(1,6,4);
@@ -71,13 +71,21 @@
     // Tile the ground around metro footprints: no invisible street through the stairs.
     for(let iz=0;iz<R.GRID;iz++)for(let ix=0;ix<R.GRID;ix++){
       const b=R.buildings[iz*R.GRID+ix],x=-half+ix*R.BLOCK,z=-half+iz*R.BLOCK;
-      const rect=(a,c,w,d)=>{if(w>0&&d>0)batch('ground',road,a+w/2,-.28,c+d/2,w,.5,d);};
+      const rect=(a,c,w,d)=>{if(w>0&&d>0)batch('ground',road,a+w/2,-.25,c+d/2,w,.5,d);};
       if(b.type!==5)rect(x,z,R.BLOCK,R.BLOCK);
       else{rect(x,z,R.BLOCK,b.z-z);rect(x,b.z+b.d,R.BLOCK,z+R.BLOCK-b.z-b.d);rect(x,b.z,b.x-x,b.d);rect(b.x+b.w,b.z,x+R.BLOCK-b.x-b.w,b.d);}
     }
+    // GRID*BLOCK is WORLD-4: the last four metres previously had paint but
+    // no road. Complete that rim and add a decorative skirt beyond the fence.
+    const groundRect=(x,z,w,d)=>batch('ground',road,x+w/2,-.25,z+d/2,w,.5,d);
+    groundRect(half-4,-half,4,R.WORLD);groundRect(-half,half-4,R.WORLD-4,4);
+    const skirt=80;
+    groundRect(-half-skirt,-half-skirt,R.WORLD+skirt*2,skirt);groundRect(-half-skirt,half,R.WORLD+skirt*2,skirt);
+    groundRect(-half-skirt,-half,skirt,R.WORLD);groundRect(half,-half,skirt,R.WORLD);
+    for(const b of R.solids.filter(v=>v.kind==='worldBoundary'))batch('cityBoundary',materials.trim,b.x+b.w/2,b.h/2,b.z+b.d/2,b.w,b.h,b.d);
     for(let n=0;n<=R.GRID;n++){
       const v=-half+2+n*R.BLOCK;
-      for(let k=-half+4;k<half-2;k+=8){batch('roadmark',white,v,.012,k,.15,.025,3);batch('roadmark',white,k,.012,v,3,.025,.15);}
+      for(let k=-half+4;k<half-2;k+=8){batch('roadmark',white,v,.004,k,.15,.006,3);batch('roadmark',white,k,.004,v,3,.006,.15);}
     }
     R.buildings.forEach(b=>{
       const {x,z,w,d,h,type,id}=b,cx=x+w/2,cz=z+d/2;
@@ -153,7 +161,7 @@
         batch('streetmetal',materials.dark,b.x+1,.45,b.z-1.5,.5,.9,.5);
       }
       if(b.id%5===0){
-        for(let i=0;i<4;i++)batch('crossing',white,b.x-4,.025,b.z+i*.85,3,.02,.38);
+        for(let i=0;i<4;i++)batch('crossing',white,b.x-4,.004,b.z+i*.85,3,.006,.38);
         batch('bench',materials.bat,b.x+3,.6,b.z-2,2,.15,.65);
         batch('benchleg',materials.dark,b.x+2.3,.3,b.z-2,.12,.6,.5);
         batch('benchleg',materials.dark,b.x+3.7,.3,b.z-2,.12,.6,.5);
@@ -187,30 +195,61 @@
       darkChunk=chunk;if(chunk)shade(chunk,k);
     }
     return {blackout,update(camera){for(const mesh of chunks){const b=mesh.boundingSphere;mesh.visible=Math.hypot(camera.position.x-b.center.x,camera.position.y-b.center.y,camera.position.z-b.center.z)<=350+b.radius;}}};
-    // Low boundary walls make the playable limits visible.
-    for(const s of [-1,1]){box(scene,s*half,1,0,.4,2,R.WORLD,materials.dark);box(scene,0,1,s*half,R.WORLD,2,.4,materials.dark);}
   }
   function hunter(){
-    const root=new T.Group(),body=new T.Group();root.add(body);
-    orb(body,0,1.55,0,.44,.58,.24,materials.cloth);box(body,0,1.1,0,.62,.3,.35,materials.pants);
-    orb(body,0,2.33,0,.27,.32,.25,materials.skin);orb(body,0,2.55,.025,.28,.13,.26,detail.hair);
-    orb(body,0,2.15,-.07,.22,.13,.19,detail.stubble);
-    orb(body,0,2.31,-.255,.055,.075,.065,materials.skin);
-    // Brows slope down towards the nose; narrowed eyes and clenched teeth read as anger.
-    for(const s of [-1,1]){
-      orb(body,s*.105,2.37,-.235,.075,.034,.025,detail.white);
-      orb(body,s*.095,2.37,-.258,.026,.03,.014,detail.iris);
-      const brow=box(body,s*.105,2.425,-.26,.17,.045,.04,detail.brow);brow.rotation.z=s*.32;
-      box(body,s*.15,2.19,-.222,.11,.028,.024,detail.mouth).rotation.z=-s*.22;
+    const root=new T.Group(),body=new T.Group();root.name='object-six-detailed';root.add(body);
+    const skin=mat(0xb79580,{roughness:.64}),coat=new T.MeshPhysicalMaterial({color:0x47554d,roughness:.91,sheen:.32,sheenColor:0x788778,sheenRoughness:.8}),leather=mat(0x202725,{roughness:.73}),stitch=mat(0x84917d),scar=mat(0x9b7468),pupil=mat(0x111a18,{roughness:.18}),steel=mat(0x9bada5,{metalness:.8,roughness:.32});
+    skin.userData.surfaceFinish=true;skin.onBeforeCompile=shader=>{shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nvarying vec2 vSkinUv;').replace('#include <uv_vertex>','#include <uv_vertex>\nvSkinUv=uv;');shader.fragmentShader=shader.fragmentShader.replace('#include <common>','#include <common>\nvarying vec2 vSkinUv;').replace('#include <color_fragment>','#include <color_fragment>\nfloat pores=sin(vSkinUv.x*780.)*sin(vSkinUv.y*680.);diffuseColor.rgb*=.98+.018*pores;');};skin.customProgramCacheKey=()=> 'six-skin-v1';
+    orb(body,0,1.65,0,.39,.4,.235,coat);orb(body,0,1.3,0,.31,.26,.21,coat);orb(body,0,1.12,0,.32,.2,.22,materials.pants);
+    orb(body,0,2.08,.015,.13,.19,.125,skin);
+    const head=new T.Group();head.position.set(0,2.34,0);head.name='six-head';head.scale.set(.84,.98,.9);body.add(head);
+    orb(head,0,.025,0,.235,.29,.225,skin);orb(head,0,-.15,-.035,.195,.14,.185,skin);
+    orb(head,0,.22,.035,.237,.105,.215,detail.hair);for(let i=0;i<7;i++)orb(head,(i-3)*.052,.245+(i%2)*.015,.005,.06,.045,.13,detail.hair);
+    orb(head,0,-.005,-.222,.037,.075,.04,skin);orb(head,0,-.065,-.239,.035,.025,.035,skin);
+    for(const sign of [-1,1]){orb(head,sign*.036,-.08,-.257,.019,.009,.015,detail.mouth);orb(head,sign*.235,-.015,.005,.035,.075,.045,skin);orb(head,sign*.105,-.065,-.18,.07,.04,.028,skin);}
+    const eyes=[];
+    for(const sign of [-1,1]){
+      const eye=new T.Group();eye.position.set(sign*.089,.04,-.204);head.add(eye);eyes.push(eye);
+      orb(eye,0,0,0,.034,.019,.021,detail.white);orb(eye,sign*.004,0,-.018,.014,.017,.008,detail.iris);orb(eye,sign*.004,0,-.025,.0065,.011,.004,pupil);
+      orb(head,sign*.089,.068,-.208,.054,.016,.027,skin);const brow=box(head,sign*.09,.092,-.222,.11,.018,.022,detail.brow);brow.rotation.z=sign*.12;
     }
-    box(body,0,2.205,-.245,.19,.052,.03,detail.mouth);
-    box(body,0,2.21,-.263,.14,.022,.013,detail.white);
-    box(body,0,1.13,-.015,.65,.09,.37,detail.belt);
-    const legs=[],arms=[];
-    for(const s of [-1,1]){const leg=new T.Group();leg.position.set(s*.2,1.12,0);body.add(leg);box(leg,0,-.45,0,.23,.9,.25,materials.pants);box(leg,0,-.94,-.1,.28,.16,.45,detail.shoe);box(leg,0,-1.025,-.1,.29,.035,.46,detail.sole);legs.push(leg);
-      const arm=new T.Group();arm.position.set(s*.46,1.95,0);body.add(arm);box(arm,0,-.26,0,.2,.52,.24,materials.cloth);orb(arm,0,-.6,0,.12,.25,.12,materials.skin);arms.push(arm);}
-    const bat=new T.Group();bat.position.set(0,-.78,0);arms[1].add(bat);segment(bat,new T.Vector3(0,0,0),new T.Vector3(0,-1.15,0),.085,materials.bat);box(bat,0,-.12,0,.12,.25,.12,materials.dark);
-    return {root,animate(t,moving,attack,climbing){legs.forEach((l,i)=>l.rotation.x=moving?Math.sin(t*11+i*Math.PI)*.6:0);arms.forEach((a,i)=>{a.rotation.x=climbing?-2.6:Math.sin(t*11+i*Math.PI)*.4;});if(attack>.65)arms[1].rotation.x=-2.6+(1.1-attack)*9;body.rotation.z=moving?Math.sin(t*11)*.035:0;}};
+    box(head,0,-.134,-.222,.105,.012,.014,detail.mouth);orb(head,0,-.147,-.21,.065,.012,.02,skin);
+    const mark=box(head,-.145,.005,-.203,.009,.1,.008,scar);mark.rotation.z=-.25;
+    box(body,0,1.67,-.24,.022,.63,.025,leather);for(const sign of [-1,1]){
+      box(body,sign*.2,1.73,-.215,.16,.18,.045,coat);box(body,sign*.2,1.83,-.245,.18,.025,.018,stitch);
+      const strap=box(body,sign*.29,1.74,.03,.045,.57,.47,leather);strap.rotation.z=-sign*.07;
+    }
+    box(body,0,1.13,-.015,.66,.075,.4,leather);box(body,0,1.13,-.235,.11,.09,.025,steel);
+    for(const sign of [-1,1])box(body,sign*.27,1.17,.03,.16,.22,.24,leather);
+    // Metal identification tag and a six-shaped raised mark.
+    box(body,.1,1.94,-.23,.12,.16,.025,steel);
+    for(const [x,y,w,h] of [[.075,1.94,.016,.09],[.1,1.98,.05,.012],[.1,1.94,.05,.012],[.1,1.9,.05,.012],[.125,1.92,.012,.04]])box(body,x,y,-.247,w,h,.008,leather);
+    const legs=[],knees=[],arms=[],elbows=[];
+    for(const sign of [-1,1]){
+      const leg=new T.Group();leg.position.set(sign*.185,1.12,0);leg.name='six-hip';body.add(leg);legs.push(leg);
+      orb(leg,0,-.24,0,.14,.3,.145,materials.pants);
+      const knee=new T.Group();knee.position.y=-.53;leg.add(knee);knees.push(knee);orb(knee,0,0,-.035,.12,.12,.13,leather);orb(knee,0,-.23,.015,.105,.255,.12,materials.pants);
+      orb(knee,0,-.49,-.065,.14,.1,.23,detail.shoe);box(knee,0,-.57,-.065,.27,.04,.44,leather);
+      for(let i=0;i<3;i++)box(knee,0,-.435-i*.025,-.15,.14,.012,.02,stitch);
+      const arm=new T.Group();arm.position.set(sign*.4,1.93,0);arm.name='six-shoulder';body.add(arm);arms.push(arm);
+      orb(arm,0,-.18,0,.145,.255,.15,coat);const elbow=new T.Group();elbow.position.y=-.43;arm.add(elbow);elbows.push(elbow);
+      orb(elbow,0,-.17,0,.105,.22,.115,coat);box(elbow,0,-.33,0,.22,.07,.23,leather);orb(elbow,0,-.43,-.015,.095,.12,.07,skin);
+      for(let f=0;f<4;f++)orb(elbow,(f-1.5)*.035,-.52,-.03,.016,.065,.024,skin);orb(elbow,-sign*.095,-.43,-.05,.025,.07,.03,skin);
+    }
+    const bat=new T.Group();bat.name='six-electric-baton';bat.position.set(0,-.49,-.015);elbows[1].add(bat);
+    segment(bat,new T.Vector3(0,0,0),new T.Vector3(0,-1.15,0),.055,steel);for(let i=0;i<6;i++)box(bat,0,-.06-i*.035,0,.12,.018,.12,leather);
+    for(const sign of [-1,1])box(bat,sign*.055,-.77,0,.018,.48,.02,materials.eye);box(bat,0,-1.16,0,.13,.08,.13,leather);
+    // Merge direct static parts; articulation stays on the parent bones.
+    function pack(parent){for(const child of [...parent.children])if(child.isGroup)pack(child);const bins=new Map();for(const child of [...parent.children])if(child.isMesh&&!child.isInstancedMesh){const key=child.geometry.uuid+child.material.uuid;if(!bins.has(key))bins.set(key,[]);bins.get(key).push(child);}for(const list of bins.values())if(list.length>1){const mesh=new T.InstancedMesh(list[0].geometry,list[0].material,list.length);list.forEach((o,i)=>{o.updateMatrix();mesh.setMatrixAt(i,o.matrix);parent.remove(o);});mesh.computeBoundingSphere();parent.add(mesh);}}
+    pack(body);
+    return {root,body,animate(t,moving,attack,climbing){
+      const cycle=t*9,breath=Math.sin(t*1.8)*.004;
+      legs.forEach((l,i)=>{const step=Math.sin(cycle+i*Math.PI);l.rotation.x=moving?step*.45:0;knees[i].rotation.x=moving?Math.max(0,-step)*.55:0;});
+      arms.forEach((a,i)=>{a.rotation.x=climbing?-2.4:moving?-Math.sin(cycle+i*Math.PI)*.32:Math.sin(t*1.8+i)*.025;elbows[i].rotation.x=climbing?-.35:-.12;});
+      if(attack>.65){arms[1].rotation.x=-2.5+(1.1-attack)*8;elbows[1].rotation.x=-.38;}
+      body.rotation.z=moving?Math.sin(cycle)*.018:0;body.position.y=.012+breath+(moving?Math.abs(Math.sin(cycle))*.025:0);head.rotation.y=Math.sin(t*.7)*.025;
+      const blink=t%4.7;eyes.forEach(e=>e.scale.y=blink<.12?.12:1);
+    }};
   }
   function spider(parent){
     const root=new T.Group(),body=new T.Group(),legs=[];parent.add(root);root.add(body);

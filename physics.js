@@ -28,6 +28,12 @@
     return out;
   }
   for(const b of buildings){b.y0=0;for(const p of roofParts(b))part(b,...p);}
+  // Physical city perimeter. Rendering uses these exact boxes as well.
+  const edge=WORLD/2;
+  for(const sign of [-1,1])for(const axis of ['x','z']){
+    const b={x:axis==='x'?(sign>0?edge-.36:-edge):-edge,z:axis==='z'?(sign>0?edge-.36:-edge):-edge,w:axis==='x'?.36:WORLD,d:axis==='z'?.36:WORLD,y0:0,h:2.4,id:solids.length,part:true,parent:-1,noClimb:true,kind:'worldBoundary'};
+    solids.push(b);
+  }
   // Index actual AABBs of buildings and rooftop parts, including cell edges.
   // Small cells keep individual stair flights local instead of returning an
   // entire furnished high-rise for each of the 120 physics ticks per second.
@@ -131,6 +137,10 @@
   }
   function move(p,dt){
     if(!(dt>0))return;
+    // Also repair stale/out-of-bounds coordinates when there is no input.
+    const boundaryLimit=WORLD/2-.36-p.r;
+    p.x=clamp(p.x,-boundaryLimit,boundaryLimit);p.z=clamp(p.z,-boundaryLimit,boundaryLimit);
+    if(Math.max(Math.abs(p.x),Math.abs(p.z))>WORLD/2-BLOCK&&groundHeight(p.x,p.z)===0&&p.y>=-1&&p.y<p.r){p.y=p.r;p.vy=Math.max(0,p.vy);}
     // A bounded travel distance also keeps diagonal corner and staircase contacts local.
     const count=Math.max(1,Math.ceil(Math.max(Math.abs(p.vx),Math.abs(p.vy),Math.abs(p.vz))*dt/Math.min(.1,p.r*.25)));
     const slice=dt/count;
@@ -138,7 +148,7 @@
       const walking=p.grounded&&!p.climbing&&p.vy<=0,feet=p.y-p.r;
       for(const axis of ['x','z']){
         const delta=p['v'+axis]*slice;if(!delta)continue;
-        const start=p[axis],target=clamp(start+delta,-WORLD/2+p.r,WORLD/2-p.r);
+        const start=p[axis],target=clamp(start+delta,-boundaryLimit,boundaryLimit);
         const x=axis==='x'?target:p.x,z=axis==='z'?target:p.z;
         const candidates=query(Math.min(p.x,x)-p.r,Math.min(p.z,z)-p.r,Math.max(p.x,x)+p.r,Math.max(p.z,z)+p.r,p.y-p.r-STEP_HEIGHT,p.y+p.r+STEP_HEIGHT);
         const hits=candidates.filter(b=>!b.disabled&&footprint(p,b,x,z)&&p.y+p.r>b.y0+CONTACT&&p.y-p.r<b.h-CONTACT);

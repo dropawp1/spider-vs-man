@@ -99,7 +99,7 @@
               vec2 surfaceUV=axis.y>max(axis.x,axis.z)?vSurface.xz:(axis.x>axis.z?vSurface.zy:vSurface.xy);
               vec3 grain=texture2D(surfaceData,surfaceUV*.45).rgb;
               float stain=texture2D(surfaceData,surfaceUV*.018).r-.5;
-              float surfaceHeight=grain.g*.045;
+              float surfaceHeight=grain.g*.0025;
               float seam=0.0;
               if(surfaceStyle>0.5){
                 vec2 tileSize=surfaceStyle<1.5?vec2(3.6,1.8):(surfaceStyle<2.5?vec2(.6,.3):vec2(.8));
@@ -109,16 +109,16 @@
                 seam=1.0-min(smoothstep(vec2(.005),vec2(.005)+aa,edge).x,smoothstep(vec2(.005),vec2(.005)+aa,edge).y);
                 surfaceHeight-=seam*.012;
               }
-              float wetPatch=surfaceWet*smoothstep(.44,.56,texture2D(surfaceData,surfaceUV*.035).g)*smoothstep(.6,.95,axis.y);
+              float wetPatch=surfaceWet*smoothstep(.46,.55,texture2D(surfaceData,surfaceUV*.0015).g)*smoothstep(.6,.95,axis.y);
               diffuseColor.rgb*=(.95+(grain.r-.5)*.30+stain*.22)*(1.0-seam*.2)*(1.0-wetPatch*.32);`)
-            .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=clamp(mix(roughnessFactor+(grain.b-.5)*.22,.13,wetPatch),.1,1.0);')
+            .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=clamp(mix(roughnessFactor+(grain.b-.5)*.16,.22,wetPatch),.16,1.0);')
             .replace('#include <normal_fragment_maps>',`#include <normal_fragment_maps>
               vec3 dx=dFdx(-vViewPosition),dy=dFdy(-vViewPosition);
               vec3 rx=cross(dy,normal),ry=cross(normal,dx);
               float determinant=dot(dx,rx);
               vec3 gradient=sign(determinant)*(dFdx(surfaceHeight)*rx+dFdy(surfaceHeight)*ry);
               normal=normalize(max(abs(determinant),.0000001)*normal-gradient*.16);`);
-        };m.customProgramCacheKey=()=>previousKey+'|surface-pbr-v5';m.needsUpdate=true;
+        };m.customProgramCacheKey=()=>previousKey+'|surface-pbr-v6';m.needsUpdate=true;
       }
     });}
     return {prepare,start,shot,reset,finish,environment,updateSky};
