@@ -3,7 +3,7 @@
    and leaves a glue "splat" of radiating fibres on the surface it stuck to. */
 (function(root){
   'use strict';
-  const SEGMENTS=32, SPLAT=14, TRAVEL_MS=90;
+  const SEGMENTS=32, SPLAT=14, TRAVEL_MS=35, RADIUS=.009;
   function points(start,end,length,time=0){
     const distance=Math.hypot(end.x-start.x,end.y-start.y,end.z-start.z);
     const slack=Math.max(0,length-distance),sag=Math.min(4,Math.sqrt(slack*Math.max(distance,1))*.3);
@@ -46,7 +46,7 @@
     }
     segments(mesh,path,radius,split=false){
       for(let i=0;i<SEGMENTS;i++){
-        const a=path[i],b=path[i+1],o=this.dummy,r=radius*(1-.45*(i+.5)/SEGMENTS);
+        const a=path[i],b=path[i+1],o=this.dummy,r=radius*(1-.25*(i+.5)/SEGMENTS);
         o.position.set((a.x+b.x)/2,(a.y+b.y)/2,(a.z+b.z)/2);
         this.direction.set(b.x-a.x,b.y-a.y,b.z-a.z);
         o.scale.set(r,split&&i===SEGMENTS/2?0:this.direction.length(),r);
@@ -72,16 +72,18 @@
     }
     update(game,start,now){
       const w=game.web;
+      // Silk casts no shadow: the lagging shadow map drew a second, flickering ghost strand.
+      for(const m of [this.thread,this.broken,this.splat,this.fibers,this.anchor])m.castShadow=m.receiveShadow=false;
       this.thread.visible=!!w;
-      this.fibers.visible=this.glint.visible=!!w;
+      this.fibers.visible=this.glint.visible=false;
       if(w){
-        if(this.shot!==w.shot){this.shot=w.shot;this.shotAt=now;this.placeSplat(w);}
+        if(this.shot!==w.shot){this.shot=w.shot;this.shotAt=now;this.straight=false;this.placeSplat(w);}
         const k=travel(now-this.shotAt),stuck=k>=1;
         const end=stuck?w:{x:start.x+(w.x-start.x)*k,y:start.y+(w.y-start.y)*k,z:start.z+(w.z-start.z)*k};
-        let path=points(start,end,stuck?w.len:0,now/1000);
-        // Decorative slack must not introduce a strand through a building.
-        if(path.some((p,i)=>i>0&&this.rules.webBlocked(path[i-1],p)))path=points(start,end,0);
-        this.segments(this.thread,path,.003);this.filaments(path,now/1000);
+        let path=points(start,end,stuck&&!this.straight?w.len:0,now/1000);
+        // Decorative slack must not introduce a strand through a building; stay straight afterwards (no flicker).
+        if(!this.straight&&path.some((p,i)=>i>0&&this.rules.webBlocked(path[i-1],p))){this.straight=true;path=points(start,end,0);}
+        this.segments(this.thread,path,RADIUS);
         this.anchor.visible=this.splat.visible=stuck;
         this.anchor.position.set(w.x,w.y,w.z);
         const normal=new this.T.Vector3(w.sx||0,w.sy||0,w.sz||0);if(normal.lengthSq()<.5)normal.set(0,1,0);this.anchor.quaternion.setFromUnitVectors(this.up,normal.normalize());
@@ -91,7 +93,7 @@
         this.released=this.last;this.last=null;this.brokenAt=now;this.anchor.visible=false;
       }
       const age=(now-this.brokenAt)/1000;
-      this.broken.visible=age>=0&&age<.55;
+      this.broken.visible=false;
       // The glue splat lingers on the wall a little longer than the falling strand.
       if(!w){this.splat.visible=age>=0&&age<2.5;if(this.splat.visible)this.splat.material.opacity=.9*(1-age/2.5);}
       if(this.broken.visible){
